@@ -15,10 +15,12 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     GhStats
+                     , Main
   build-depends:       base >=4.11 && <4.12
                      , github == 0.19
   hs-source-dirs:      src
   default-language:    Haskell2010
+  ghc-options:         -Wall
 
 executable gh-stats
   main-is:             Main.hs
@@ -27,3 +29,4 @@ executable gh-stats
   build-depends:       base >=4.11 && <4.12
   hs-source-dirs:      exe
   default-language:    Haskell2010
+  ghc-options:         -Wall
