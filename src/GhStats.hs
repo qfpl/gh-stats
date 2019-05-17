@@ -13,12 +13,6 @@ import           GitHub                  (Error, Name, Organization, Repo (..),
 import           GitHub.Endpoints.Repos  (organizationRepos)
 import           GitHub.Internal.Prelude (Vector)
 
-data Stats =
-  Stats {
-    repos :: Vector RepoStats
-  }
-  deriving Show
-
 data RepoStats =
   RepoStats {
     _name  :: Name Repo
@@ -48,7 +42,7 @@ toRepoStats Repo {repoName, repoForks, repoStargazersCount} =
 
 getOrgStats ::
   Name Organization
-  -> IO (Either Error Stats)
+  -> IO (Either Error (Vector RepoStats))
 getOrgStats =
-  (fmap . fmap) (Stats . fmap toRepoStats) . organizationRepos
+  (fmap . fmap . fmap) toRepoStats . organizationRepos
 

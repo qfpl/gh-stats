@@ -17,6 +17,7 @@ library
   exposed-modules:     GhStats
                      , Main
   build-depends:       base >=4.11 && <4.12
+                     , bytestring == 0.10.*
                      , github == 0.19
                      , lens == 4.16.*
                      , sv == 1.2.*
