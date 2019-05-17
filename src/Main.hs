@@ -1,9 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
-import GhStats (getStats)
+import GhStats (getOrgStats)
 
 main ::
   IO ()
 main = do
-  es <- getStats
+  es <- getOrgStats "qfpl"
   either print print es

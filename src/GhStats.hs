@@ -28,8 +28,9 @@ toRepoStats ::
 toRepoStats Repo {repoName, repoForks, repoStargazersCount} =
   RepoStats {name = repoName, stars = repoStargazersCount, forks = repoForks}
 
-getStats ::
-  IO (Either Error Stats)
-getStats =
-  (fmap . fmap) (Stats . fmap toRepoStats) $ organizationRepos "qfpl"
+getOrgStats ::
+  Name Organization
+  -> IO (Either Error Stats)
+getOrgStats =
+  (fmap . fmap) (Stats . fmap toRepoStats) . organizationRepos
 
