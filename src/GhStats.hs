@@ -1,12 +1,11 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
 module GhStats where
 
-import GitHub (Error, Name)
-import GitHub.Data.Repos (Repo (..))
-import GitHub.Endpoints.Repos (organizationRepos)
-import GitHub.Internal.Prelude (Vector)
+import           GitHub                  (Error, Name, Repo (..), Organization)
+import           GitHub.Data.Repos       (Repo (..))
+import           GitHub.Endpoints.Repos  (organizationRepos)
+import           GitHub.Internal.Prelude (Vector)
 
 data Stats =
   Stats {
@@ -16,7 +15,7 @@ data Stats =
 
 data RepoStats =
   RepoStats {
-    name :: Name Repo
+    name  :: Name Repo
   , stars :: Int
   , forks :: Maybe Int
   }
@@ -26,7 +25,11 @@ toRepoStats ::
   Repo
   -> RepoStats
 toRepoStats Repo {repoName, repoForks, repoStargazersCount} =
-  RepoStats {name = repoName, stars = repoStargazersCount, forks = repoForks}
+  RepoStats {
+    name = repoName
+  , stars = repoStargazersCount
+  , forks = repoForks
+  }
 
 getOrgStats ::
   Name Organization
