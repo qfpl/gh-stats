@@ -1,4 +1,4 @@
-module Main where
+module GhStats.Main where
 
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable        (toList)
