@@ -1,0 +1,7 @@
+nohup.out
+dist*
+.ghc.env*
+cabal.project.local*
+TAGS
+.o
+.hi
