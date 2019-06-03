@@ -5,9 +5,15 @@ import           Data.Foldable        (toList)
 import           Data.Sv              (defaultEncodeOptions, encodeNamed)
 import qualified Data.Text            as T
 import           GitHub               (mkOrganizationName)
+import           Options.Applicative  (command, subparser)
 import           System.Environment   (getArgs)
 
 import           GhStats              (getOrgStats, repoStatsEnc)
+
+data Command =
+  Csv
+  | Server FilePath
+  deriving (Eq, Show)
 
 main ::
   IO ()
