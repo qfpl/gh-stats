@@ -8,16 +8,20 @@ import           Control.Lens            (makeLenses, to)
 import           Data.Semigroup          ((<>))
 import           Data.Sv                 (NameEncode, (=:))
 import qualified Data.Sv.Encode          as E
+import           Data.Time.Clock         (UTCTime)
 import           GitHub                  (Error, Name, Organization, Repo (..),
                                           untagName)
+import           GitHub.Data.Traffic     (Referrer)
 import           GitHub.Endpoints.Repos  (organizationRepos)
 import           GitHub.Internal.Prelude (Vector)
 
 data RepoStats =
   RepoStats {
-    _name  :: Name Repo
-  , _stars :: Int
-  , _forks :: Maybe Int
+    _name             :: Name Repo
+  , _timestamp        :: UTCTime
+  , _stars            :: Int
+  , _forks            :: Maybe Int
+  , _popularReferrers :: Vector Referrer
   }
   deriving Show
 

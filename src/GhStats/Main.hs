@@ -5,9 +5,7 @@ module GhStats.Main where
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable        (toList)
 import           Data.Sv              (defaultEncodeOptions, encodeNamed)
-import           Data.Text            (Text)
-import qualified Data.Text            as T
-import           GitHub               (mkOrganizationName, Name, Organization)
+import           GitHub               (Name, Organization)
 import           Options.Applicative  (Parser, command, execParser, fullDesc,
                                        header, help, helper, info, long,
                                        metavar, progDesc, short, strOption,
