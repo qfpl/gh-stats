@@ -18,7 +18,7 @@ library
                      , GhStats.Main
   build-depends:       base >=4.11 && <4.13
                      , bytestring == 0.10.*
-                     , github >= 0.19 && <0.22
+                     , github >=0.22 && <0.23
                      , lens == 4.17.*
                      , sv == 1.3.*
                      , text == 1.2.*
