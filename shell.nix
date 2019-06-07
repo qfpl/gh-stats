@@ -1,5 +1,5 @@
 { nixpkgs ? import ./nixpkgs.nix
-, githubPath ? "nixpkgs"
+, githubPath ? "default"
 }:
 
 (import ./. {dev = true; inherit githubPath;}).env
