@@ -1,5 +1,5 @@
 builtins.fetchGit {
-  naml = "qfpl-github-fork";
+  name = "qfpl-github-fork";
   url = https://github.com/qfpl/github/;
   # `git ls-remote https://github.com/qfpl/github traffic-nix`
   ref = "traffic-nix";
