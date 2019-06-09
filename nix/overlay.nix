@@ -7,6 +7,7 @@ self: super: {
 
       # Things that work with our newer versions of things.
       cassava = doJailbreak hsuper.cassava;
+      direct-sqlite = doJailbreak hsuper.direct-sqlite;
       hw-prim = doJailbreak hsuper.hw-prim;
       hw-bits = doJailbreak hsuper.hw-bits;
       hw-rankselect-base = doJailbreak hsuper.hw-rankselect-base;
@@ -14,6 +15,7 @@ self: super: {
       hw-excess = doJailbreak hsuper.hw-excess;
       hw-balancedparens = doJailbreak hsuper.hw-balancedparens;
       psqueues = doJailbreak hsuper.psqueues;
+      sqlite-simple = doJailbreak hsuper.sqlite-simple;
       vault = doJailbreak hsuper.vault;
 
       # Revision 1 removes upper bound on hashable. This is what latest hackage-packages.nix has.
