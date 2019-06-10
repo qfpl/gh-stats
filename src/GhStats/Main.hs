@@ -2,6 +2,7 @@
 
 module GhStats.Main where
 
+import           Control.Monad.Except (runExceptT)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable        (toList)
 import           Data.Sv              (defaultEncodeOptions, encodeNamed)
@@ -11,23 +12,25 @@ import           Options.Applicative  (Parser, command, execParser, fullDesc,
                                        metavar, progDesc, short, strOption,
                                        subparser, (<**>))
 
-import           GhStats              (getOrgStats, repoStatsEnc)
+import           GhStats              (Token, getHighLevelOrgStats,
+                                       highLevelRepoStatsEnc)
 
 go ::
   Command
   -> IO ()
 go = \case
-  Csv orgName -> csv orgName
-  UpdateDb _orgName _dbFile -> error "todo: update"
-  Serve _orgName _dbFile -> error "todo: serve"
+  Csv orgName token -> csv orgName token
+  UpdateDb _orgName _dbFile _token -> error "todo: update"
+  Serve _orgName _dbFile _token -> error "todo: serve"
 
 csv ::
   Name Organization
+  -> Token
   -> IO ()
-csv orgName = do
+csv orgName token = do
   let
-    dumpCsv = LBS.putStr . encodeNamed repoStatsEnc defaultEncodeOptions . toList
-  es <- getOrgStats orgName
+    dumpCsv = LBS.putStr . encodeNamed highLevelRepoStatsEnc defaultEncodeOptions . toList
+  es <- runExceptT $ getHighLevelOrgStats token orgName
   either print dumpCsv es
 
 main ::
@@ -42,9 +45,9 @@ main =
         )
 
 data Command =
-  Csv (Name Organization)                 -- ^ Output the per-repository summary as a CSV to stdout
-  | UpdateDb (Name Organization) FilePath -- ^ Insert the latest summary into the SQLite DB
-  | Serve (Name Organization) FilePath    -- ^ Serve the latest summary as a web page
+  Csv (Name Organization) Token                -- ^ Output the per-repository summary as a CSV to stdout
+  | UpdateDb (Name Organization) FilePath Token -- ^ Insert the latest summary into the SQLite DB
+  | Serve (Name Organization) FilePath Token    -- ^ Serve the latest summary as a web page
   deriving (Eq, Show)
 
 dbParser ::
@@ -67,25 +70,37 @@ orgParser =
    <> help "Github organisation to collect stats for."
     )
 
+tokenParser ::
+  Parser Token
+tokenParser =
+  strOption
+    ( long "token"
+   <> short 't'
+   <> metavar "TOKEN"
+   <> help "Github OAuth token."
+    )
+
 cmdParser ::
   Parser Command
 cmdParser =
   let
+    csvParser =
+      Csv <$> orgParser <*> tokenParser
     csvDesc =
       "Output the latest summary as a CSV to stdout."
 
     updateParser =
-      UpdateDb <$> orgParser <*> dbParser
+      UpdateDb <$> orgParser <*> dbParser <*> tokenParser
     updateDesc =
       "Insert the latest summary into the SQLite DB, creating the DB if necessary."
 
     serveParser =
-      Serve <$> orgParser <*> dbParser
+      Serve <$> orgParser <*> dbParser <*> tokenParser
     serveDesc =
       "Serve the latest summary as a web page."
   in
     subparser
-      ( command "csv" (info (Csv <$> orgParser) (progDesc csvDesc))
+      ( command "csv" (info csvParser (progDesc csvDesc))
      <> command "update" (info updateParser (progDesc updateDesc))
      <> command "serve" (info serveParser (progDesc serveDesc))
       )

@@ -1,5 +1,5 @@
 { mkDerivation, base, bytestring, github, lens, mtl
-, optparse-applicative, stdenv, sv, text, time
+, optparse-applicative, stdenv, sv, text, time, vector
 }:
 mkDerivation {
   pname = "gh-stats";
@@ -9,6 +9,7 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     base bytestring github lens mtl optparse-applicative sv text time
+    vector
   ];
   executableHaskellDepends = [ base ];
   homepage = "https://qfpl.io";
