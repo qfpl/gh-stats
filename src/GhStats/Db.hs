@@ -1,35 +1,54 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE RecordWildCards   #-}
 
 module GhStats.Db where
 
-import           Control.Lens                   (view, (^.))
-import           Control.Lens.Indexed           (FunctorWithIndex,
-                                                 TraversableWithIndex, imap)
-import           Control.Monad                  (join, void, (<=<))
-import Control.Monad.Error.Lens (throwing)
-import           Control.Monad.Except           (MonadError)
-import           Control.Monad.IO.Class         (MonadIO, liftIO)
-import           Control.Monad.Reader           (MonadReader, reader)
+import           Control.Lens                 (view, (^.))
+import           Control.Lens.Indexed         (FunctorWithIndex,
+                                               TraversableWithIndex, imap)
+import           Control.Monad                (join, void, (<=<))
+import           Control.Monad.Error.Lens     (throwing)
+import           Control.Monad.Except         (MonadError)
+import           Control.Monad.IO.Class       (MonadIO, liftIO)
+import           Control.Monad.Reader         (MonadReader, reader)
 -- import           Data.Vector            (Vector)
-import           Data.Foldable                  (Foldable, toList)
-import           Data.Time.Clock                (UTCTime)
-import           Database.SQLite.Simple         (Connection,
-                                                 SQLData (SQLInteger),
-                                                 ToRow (toRow), execute,
-                                                 executeMany, open)
-import           Database.SQLite.SimpleErrors  (runDBAction)
-import           Database.SQLite.Simple.ToField (toField)
-import           GitHub                         (Name, untagName)
-import           GitHub.Data.Traffic            (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
+import           Data.Foldable                (Foldable, toList)
+import           Data.Time.Clock              (UTCTime)
+import           Database.SQLite.Simple       (Connection, ToRow (toRow),
+                                               execute, executeMany, execute_)
+import           Database.SQLite.Simple.QQ    (sql)
+import           Database.SQLite.SimpleErrors (runDBAction)
+import           GitHub                       (Name, untagName)
+import           GitHub.Data.Traffic          (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
 
-import           GhStats.Types                  (AsSQLiteResponse (_SQLiteResponse),
-                                                 HasConnection (connection),
-                                                 RepoStats,
-                                                 repoStatsPopularReferrers,
-                                                 repoStatsTimestamp)
+import           GhStats.Types                (AsSQLiteResponse (_SQLiteResponse),
+                                               HasConnection (connection),
+                                               RepoStats,
+                                               repoStatsPopularReferrers,
+                                               repoStatsTimestamp)
+
+initDb ::
+  ( MonadReader r m
+  , HasConnection r
+  , MonadIO m
+  , AsSQLiteResponse e
+  , MonadError e m
+  )
+  => m ()
+initDb = do
+  let
+    q = [sql| CREATE TABLE IF NOT EXISTS repos
+              ( id INTEGER PRIMARY KEY
+              , name TEXT
+              , timestamp TEXT
+              , stars INTEGER
+              , forks INTEGER
+              )
+            |]
+  withConn $ \conn -> execute_ conn q
 
 addToDb ::
   ( MonadError e m
@@ -37,6 +56,7 @@ addToDb ::
   , MonadReader r m
   , Traversable t
   , HasConnection r
+  , MonadIO m
   )
   => t RepoStats
   -> m ()
@@ -48,6 +68,7 @@ insertRepoStats ::
   , AsSQLiteResponse e
   , MonadReader r m
   , HasConnection r
+  , MonadIO m
   )
   => RepoStats
   -> m ()
@@ -76,10 +97,10 @@ insertReferrers ::
 insertReferrers t refs = do
   let
     q =  "INSERT INTO referrers (timestamp, position, name, count, uniques) VALUES (?,?,?,?,?)"
-    toDbReferrer t i Referrer{referrer, referrerCount, referrerUniques} =
+    toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
       DbReferrer t i referrer referrerCount referrerUniques
   conn <- reader (view connection)
-  liftIO . executeMany conn q . imap (toDbReferrer t) . toList $ refs
+  liftIO . executeMany conn q . imap toDbReferrer . toList $ refs
 
 data DbReferrer =
   DbReferrer {
