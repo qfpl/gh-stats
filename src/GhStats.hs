@@ -1,73 +1,23 @@
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module GhStats where
 
-import           Control.Lens                   (makeLenses, to)
 import           Control.Monad.Except           (ExceptT (ExceptT))
 import           Control.Monad.IO.Class         (liftIO)
-import           Data.ByteString                (ByteString)
-import           Data.Semigroup                 ((<>))
-import           Data.String                    (IsString)
-import           Data.Sv                        (NameEncode, (=:))
-import qualified Data.Sv.Encode                 as E
-import           Data.Time.Clock                (UTCTime, getCurrentTime)
+import           Data.Time.Clock                (getCurrentTime)
 import           Data.Vector                    (Vector)
 import           GitHub                         (Auth (OAuth), Error, Name,
                                                  Organization, Repo (..),
-                                                 SimpleOwner (simpleOwnerLogin),
-                                                 untagName)
-import           GitHub.Data.Traffic            (Clones (clonesCount, clonesUniques),
-                                                 Period (Day), PopularPath,
-                                                 Referrer,
-                                                 Views (viewsCount, viewsUniques))
+                                                 SimpleOwner (simpleOwnerLogin))
+import           GitHub.Data.Traffic            (Period (Day))
 import           GitHub.Endpoints.Repos         (organizationRepos)
 import           GitHub.Endpoints.Repos.Traffic (clones', popularPaths',
                                                  popularReferrers', views')
 
-data RepoStats =
-  RepoStats {
-    _name             :: Name Repo
-  , _timestamp        :: UTCTime
-  , _stars            :: Int
-  , _forks            :: Maybe Int
-  , _popularReferrers :: Vector Referrer
-  , _popularPaths     :: Vector PopularPath
-  , _views            :: Views
-  , _clones           :: Clones
-  }
-  deriving Show
+import           GhStats.Types                  (HighLevelRepoStats (HighLevelRepoStats),
+                                                 RepoStats (RepoStats),
+                                                 Token (getToken))
 
-makeLenses ''RepoStats
-
-data HighLevelRepoStats =
-  HighLevelRepoStats {
-    _hlName             :: Name Repo
-  , _hlTimestamp        :: UTCTime
-  , _hlStars            :: Int
-  , _hlForks            :: Maybe Int
-  , _hlViews            :: Views
-  , _hlClones           :: Clones
-  }
-  deriving Show
-
-makeLenses ''HighLevelRepoStats
-
-highLevelRepoStatsEnc ::
-  NameEncode HighLevelRepoStats
-highLevelRepoStatsEnc =
-     "name" =: E.encodeOf (hlName.to untagName) E.text
-  <> "stars" =: E.encodeOf hlStars E.int
-  <> "forks" =: E.encodeOf hlForks (E.int E.?>> "0")
-  <> "views" =: E.encodeOf (hlViews.to viewsCount) E.int
-  <> "unique views" =: E.encodeOf (hlViews.to viewsUniques) E.int
-  <> "clones" =: E.encodeOf (hlClones.to clonesCount) E.int
-  <> "unique clones" =: E.encodeOf (hlClones.to clonesUniques) E.int
-
-newtype Token = Token { getToken :: ByteString }
-  deriving (Eq, Show, IsString)
 
 -- TODO: use validation to collect all failures.
 getOrgStats ::
@@ -96,7 +46,7 @@ toRepoStats tok Repo{repoName, repoOwner, repoForks, repoStargazersCount} =
     RepoStats repoName
     <$> liftIO getCurrentTime
     <*> pure repoStargazersCount
-    <*> pure repoForks
+    <*> pure (fromMaybe 0 repoForks)
     <*> ExceptT (popularReferrers' auth owner repoName)
     <*> ExceptT (popularPaths' auth owner repoName)
     <*> ExceptT (views' auth owner repoName Day)
