@@ -12,15 +12,16 @@ import           Options.Applicative  (Parser, command, execParser, fullDesc,
                                        metavar, progDesc, short, strOption,
                                        subparser, (<**>))
 
-import           GhStats              (Token, getHighLevelOrgStats,
+import           GhStats              (Token, getHighLevelOrgStats, getOrgStats,
                                        highLevelRepoStatsEnc)
+import           GhStats.Db           (addToDb)
 
 go ::
   Command
   -> IO ()
 go = \case
   Csv orgName token -> csv orgName token
-  UpdateDb _orgName _dbFile _token -> error "todo: update"
+  UpdateDb orgName dbFile token -> updateDb orgName dbFile token
   Serve _orgName _dbFile _token -> error "todo: serve"
 
 csv ::
@@ -32,6 +33,15 @@ csv orgName token = do
     dumpCsv = LBS.putStr . encodeNamed highLevelRepoStatsEnc defaultEncodeOptions . toList
   es <- runExceptT $ getHighLevelOrgStats token orgName
   either print dumpCsv es
+
+updateDb ::
+  Name Organization
+  -> FilePath
+  -> Token
+  -> IO ()
+updateDb orgName dbFile token = printErrors . runExceptT $ do
+  repoStats <- getOrgStats token orgName
+  addToDb repoStats
 
 main ::
   IO ()
