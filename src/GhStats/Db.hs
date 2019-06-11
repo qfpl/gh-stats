@@ -5,10 +5,11 @@
 
 module GhStats.Db where
 
-import           Control.Lens                   (view)
+import           Control.Lens                   (view, (^.))
 import           Control.Lens.Indexed           (FunctorWithIndex,
                                                  TraversableWithIndex, imap)
-import           Control.Monad                  (void)
+import           Control.Monad                  (join, void, (<=<))
+import Control.Monad.Error.Lens (throwing)
 import           Control.Monad.Except           (MonadError)
 import           Control.Monad.IO.Class         (MonadIO, liftIO)
 import           Control.Monad.Reader           (MonadReader, reader)
@@ -17,15 +18,18 @@ import           Data.Foldable                  (Foldable, toList)
 import           Data.Time.Clock                (UTCTime)
 import           Database.SQLite.Simple         (Connection,
                                                  SQLData (SQLInteger),
-                                                 ToRow (toRow), executeMany,
-                                                 open)
+                                                 ToRow (toRow), execute,
+                                                 executeMany, open)
+import           Database.SQLite.SimpleErrors  (runDBAction)
 import           Database.SQLite.Simple.ToField (toField)
 import           GitHub                         (Name, untagName)
 import           GitHub.Data.Traffic            (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
 
-import           GhStats.Types                  (AsSQLiteResponse,
+import           GhStats.Types                  (AsSQLiteResponse (_SQLiteResponse),
                                                  HasConnection (connection),
-                                                 RepoStats)
+                                                 RepoStats,
+                                                 repoStatsPopularReferrers,
+                                                 repoStatsTimestamp)
 
 addToDb ::
   ( MonadError e m
@@ -50,7 +54,11 @@ insertRepoStats ::
 insertRepoStats repoStats = do
   let
     q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
-  conn <- reader (view connection)
+    t = repoStats ^. repoStatsTimestamp
+  insertReferrers t $ repoStats ^. repoStatsPopularReferrers
+  withConn $ \conn ->
+    execute conn q repoStats
+
 
 insertReferrers ::
   ( MonadError e m
@@ -85,3 +93,19 @@ data DbReferrer =
 instance ToRow DbReferrer where
   toRow DbReferrer{..} =
     toRow (dbRefTimestamp, dbRefPosition, untagName dbRefName, dbRefCount, dbRefUniques)
+
+withConn ::
+  ( MonadReader r m
+  , HasConnection r
+  , MonadError e m
+  , AsSQLiteResponse e
+  , MonadIO m
+  )
+  => (Connection -> IO a)
+  -> m a
+withConn f =
+  let
+    handleErrors =
+      either (throwing _SQLiteResponse) pure
+  in
+    join $ reader (handleErrors <=< liftIO . runDBAction . f . view connection)
