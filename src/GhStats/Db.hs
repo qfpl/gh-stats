@@ -1,34 +1,42 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes       #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 module GhStats.Db where
 
-import           Control.Lens                 (view, (^.))
-import           Control.Lens.Indexed         (FunctorWithIndex,
-                                               TraversableWithIndex, imap)
-import           Control.Monad                (join, void, (<=<))
-import           Control.Monad.Error.Lens     (throwing)
-import           Control.Monad.Except         (MonadError)
-import           Control.Monad.IO.Class       (MonadIO, liftIO)
-import           Control.Monad.Reader         (MonadReader, reader)
--- import           Data.Vector            (Vector)
-import           Data.Foldable                (Foldable, toList)
-import           Data.Time.Clock              (UTCTime)
-import           Database.SQLite.Simple       (Connection, ToRow (toRow),
-                                               execute, executeMany, execute_)
-import           Database.SQLite.Simple.QQ    (sql)
-import           Database.SQLite.SimpleErrors (runDBAction)
-import           GitHub                       (Name, untagName)
-import           GitHub.Data.Traffic          (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
+import           Control.Lens                     (view, (^.))
+import           Control.Lens.Indexed             (FunctorWithIndex,
+                                                   TraversableWithIndex, imap)
+import           Control.Monad                    (join, void, (<=<))
+import           Control.Monad.Error.Lens         (throwing)
+import           Control.Monad.Except             (MonadError)
+import           Control.Monad.IO.Class           (MonadIO, liftIO)
+import           Control.Monad.Reader             (MonadReader, reader)
+import           Data.Foldable                    (Foldable, toList)
+import           Data.Int                         (Int64)
+import           Data.String                      (fromString)
+import           Data.Time.Clock                  (UTCTime)
+import           Database.SQLite.Simple           (Connection,
+                                                   ToRow (toRow), execute,
+                                                   executeMany, execute_,
+                                                   lastInsertRowId)
+import           Database.SQLite.Simple.FromField (FromField)
+import           Database.SQLite.Simple.ToField   (ToField)
+import           Database.SQLite.SimpleErrors     (runDBAction)
+import           GitHub                           (Name, Repo, untagName)
+import           GitHub.Data.Traffic              (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
 
-import           GhStats.Types                (AsSQLiteResponse (_SQLiteResponse),
-                                               HasConnection (connection),
-                                               RepoStats,
-                                               repoStatsPopularReferrers,
-                                               repoStatsTimestamp)
+import           GhStats.Types                    (AsSQLiteResponse (_SQLiteResponse),
+                                                   HasConnection (connection),
+                                                   RepoStats,
+                                                   repoStatsPopularPaths,
+                                                   repoStatsPopularReferrers,
+                                                   repoStatsTimestamp)
+
+newtype Id a = Id Int64
+  deriving (Eq, Show, FromField, ToField)
 
 initDb ::
   ( MonadReader r m
@@ -38,17 +46,32 @@ initDb ::
   , MonadError e m
   )
   => m ()
-initDb = do
+initDb =
   let
-    q = [sql| CREATE TABLE IF NOT EXISTS repos
-              ( id INTEGER PRIMARY KEY
-              , name TEXT
-              , timestamp TEXT
-              , stars INTEGER
-              , forks INTEGER
-              )
-            |]
-  withConn $ \conn -> execute_ conn q
+    qRepos = fromString $ concat [
+        "CREATE TABLE IF NOT EXISTS repos"
+      , "( id INTEGER PRIMARY KEY"
+      , ", name TEXT"
+      , ", timestamp TEXT"
+      , ", stars INTEGER"
+      , ", forks INTEGER"
+      , ")"
+      ]
+    qReferrers = fromString $ concat [
+        "CREATE TABLE IF NOT EXISTS referrers"
+      , "( id INTEGER PRIMARY KEY"
+      , ", position INTEGER"
+      , ", name TEXT"
+      , ", count INTEGER"
+      , ", uniques INTEGER"
+      , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
+      , ")"
+      ]
+  in
+    withConn $ \conn -> do
+      execute_ conn qRepos
+      execute_ conn qReferrers
+
 
 addToDb ::
   ( MonadError e m
@@ -71,14 +94,17 @@ insertRepoStats ::
   , MonadIO m
   )
   => RepoStats
-  -> m ()
-insertRepoStats repoStats = do
+  -> m (Id DbRepoStats)
+insertRepoStats repoStats =
   let
     q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
-    t = repoStats ^. repoStatsTimestamp
-  insertReferrers t $ repoStats ^. repoStatsPopularReferrers
-  withConn $ \conn ->
-    execute conn q repoStats
+  in
+    withConnM $ \conn -> do
+      runDb $ execute conn q repoStats
+      rsId <- runDb . fmap Id $ lastInsertRowId conn
+      insertReferrers rsId $ repoStats ^. repoStatsPopularReferrers
+      -- insertPaths rsId $ repoStats ^. repoStatsPopularPaths
+      pure rsId
 
 
 insertReferrers ::
@@ -91,29 +117,39 @@ insertReferrers ::
   , FunctorWithIndex Int t
   , TraversableWithIndex Int t
   )
-  => UTCTime
+  => Id DbRepoStats
   -> t Referrer
   -> m ()
-insertReferrers t refs = do
+insertReferrers rsId refs = do
   let
-    q =  "INSERT INTO referrers (timestamp, position, name, count, uniques) VALUES (?,?,?,?,?)"
+    q =  "INSERT INTO referrers (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
     toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
-      DbReferrer t i referrer referrerCount referrerUniques
+      DbReferrer (Id 0) i referrer referrerCount referrerUniques rsId
   conn <- reader (view connection)
   liftIO . executeMany conn q . imap toDbReferrer . toList $ refs
 
+data DbRepoStats =
+  DbRepoStats {
+    dbRepoStatsId        :: !(Id DbReferrer)
+  , dbRepoStatsName      :: !(Name Repo)
+  , dbRepoStatsTimestamp :: !UTCTime
+  , dbRepoStatsStars     :: !Int
+  , dbRepoStatsForks     :: !Int
+  }
+
 data DbReferrer =
   DbReferrer {
-    dbRefTimestamp :: !UTCTime
-  , dbRefPosition  :: !Int
-  , dbRefName      :: !(Name Referrer)
-  , dbRefCount     :: !Int
-  , dbRefUniques   :: !Int
+    dbRefId       :: !(Id DbReferrer)
+  , dbRefPosition :: !Int
+  , dbRefName     :: !(Name Referrer)
+  , dbRefCount    :: !Int
+  , dbRefUniques  :: !Int
+  , dbRefRepoId   :: !(Id DbRepoStats)
   }
 
 instance ToRow DbReferrer where
   toRow DbReferrer{..} =
-    toRow (dbRefTimestamp, dbRefPosition, untagName dbRefName, dbRefCount, dbRefUniques)
+    toRow (dbRefPosition, untagName dbRefName, dbRefCount, dbRefUniques, dbRefRepoId)
 
 withConn ::
   ( MonadReader r m
@@ -125,8 +161,26 @@ withConn ::
   => (Connection -> IO a)
   -> m a
 withConn f =
-  let
-    handleErrors =
-      either (throwing _SQLiteResponse) pure
-  in
-    join $ reader (handleErrors <=< liftIO . runDBAction . f . view connection)
+    join $ reader (runDb . f . view connection)
+
+withConnM ::
+  ( MonadReader r m
+  , HasConnection r
+  , MonadError e m
+  , AsSQLiteResponse e
+  , MonadIO m
+  )
+  => (Connection -> m a)
+  -> m a
+withConnM f =
+    join $ reader (f . view connection)
+
+runDb ::
+  ( MonadError e m
+  , AsSQLiteResponse e
+  , MonadIO m
+  )
+  => IO a
+  -> m a
+runDb =
+  either (throwing _SQLiteResponse) pure <=< liftIO . runDBAction
