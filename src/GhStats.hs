@@ -4,6 +4,7 @@ module GhStats where
 
 import           Control.Monad.Except           (ExceptT (ExceptT))
 import           Control.Monad.IO.Class         (liftIO)
+import           Data.Maybe                     (fromMaybe)
 import           Data.Time.Clock                (getCurrentTime)
 import           Data.Vector                    (Vector)
 import           GitHub                         (Auth (OAuth), Error, Name,
@@ -14,8 +15,9 @@ import           GitHub.Endpoints.Repos         (organizationRepos)
 import           GitHub.Endpoints.Repos.Traffic (clones', popularPaths',
                                                  popularReferrers', views')
 
-import           GhStats.Types                  (HighLevelRepoStats (HighLevelRepoStats),
+import           GhStats.Types                  (Forks (Forks), HighLevelRepoStats (HighLevelRepoStats),
                                                  RepoStats (RepoStats),
+                                                 Stars (Stars),
                                                  Token (getToken))
 
 
@@ -45,8 +47,8 @@ toRepoStats tok Repo{repoName, repoOwner, repoForks, repoStargazersCount} =
   in
     RepoStats repoName
     <$> liftIO getCurrentTime
-    <*> pure repoStargazersCount
-    <*> pure (fromMaybe 0 repoForks)
+    <*> pure (Stars repoStargazersCount)
+    <*> pure (Forks $ fromMaybe 0 repoForks)
     <*> ExceptT (popularReferrers' auth owner repoName)
     <*> ExceptT (popularPaths' auth owner repoName)
     <*> ExceptT (views' auth owner repoName Day)
@@ -63,7 +65,7 @@ toHighLevelRepoStats tok Repo{repoName, repoOwner, repoForks, repoStargazersCoun
   in
     HighLevelRepoStats repoName
     <$> liftIO getCurrentTime
-    <*> pure repoStargazersCount
-    <*> pure repoForks
+    <*> pure (Stars repoStargazersCount)
+    <*> pure (Forks $ fromMaybe 0 repoForks)
     <*> ExceptT (views' auth owner repoName Day)
     <*> ExceptT (clones' auth owner repoName Day)

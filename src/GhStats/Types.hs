@@ -1,14 +1,18 @@
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module GhStats.Types where
 
 import           Control.Lens                       (Lens', Prism',
                                                      makeClassyPrisms,
-                                                     makeLenses, prism, to, (&),
-                                                     (^.))
+                                                     makeLenses, makeWrapped,
+                                                     prism, to, (&), (^.),
+                                                     _Wrapped)
 import           Data.ByteString                    (ByteString)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -72,8 +76,12 @@ instance AsSQLiteResponse Error where
 newtype Stars = Stars Int
   deriving (Eq, Show, FromField, ToField)
 
+makeWrapped ''Stars
+
 newtype Forks = Forks Int
   deriving (Eq, Show, FromField, ToField)
+
+makeWrapped ''Forks
 
 data RepoStats =
   RepoStats {
@@ -102,8 +110,8 @@ data HighLevelRepoStats =
   HighLevelRepoStats {
     _hlName      :: !(GH.Name GH.Repo)
   , _hlTimestamp :: !UTCTime
-  , _hlStars     :: !Int
-  , _hlForks     :: !Int
+  , _hlStars     :: !Stars
+  , _hlForks     :: !Forks
   , _hlViews     :: !GH.Views
   , _hlClones    :: !GH.Clones
   }
@@ -115,8 +123,8 @@ highLevelRepoStatsEnc ::
   NameEncode HighLevelRepoStats
 highLevelRepoStatsEnc =
      "name" =: E.encodeOf (hlName.to GH.untagName) E.text
-  <> "stars" =: E.encodeOf hlStars E.int
-  <> "forks" =: E.encodeOf hlForks E.int
+  <> "stars" =: E.encodeOf (hlStars._Wrapped) E.int
+  <> "forks" =: E.encodeOf (hlForks._Wrapped) E.int
   <> "views" =: E.encodeOf (hlViews.to GH.viewsCount) E.int
   <> "unique views" =: E.encodeOf (hlViews.to GH.viewsUniques) E.int
   <> "clones" =: E.encodeOf (hlClones.to GH.clonesCount) E.int
