@@ -5,8 +5,10 @@
 
 module GhStats.Types where
 
-import           Control.Lens                       (Prism', makeClassyPrisms,
-                                                     makeLenses, prism, to, Lens', (^.), (&))
+import           Control.Lens                       (Lens', Prism',
+                                                     makeClassyPrisms,
+                                                     makeLenses, prism, to, (&),
+                                                     (^.))
 import           Data.ByteString                    (ByteString)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -15,6 +17,8 @@ import           Data.Text                          (Text)
 import           Data.Time.Clock                    (UTCTime)
 import           Data.Vector                        (Vector)
 import           Database.SQLite.Simple             (Connection, ToRow (toRow))
+import           Database.SQLite.Simple.FromField   (FromField)
+import           Database.SQLite.Simple.ToField     (ToField)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 import qualified GitHub                             as GH
 import           Network.HTTP.Client                (HttpException)
@@ -65,12 +69,18 @@ instance AsGhError Error where
 instance AsSQLiteResponse Error where
   _SQLiteResponse = _SQLiteError
 
+newtype Stars = Stars Int
+  deriving (Eq, Show, FromField, ToField)
+
+newtype Forks = Forks Int
+  deriving (Eq, Show, FromField, ToField)
+
 data RepoStats =
   RepoStats {
     _repoStatsName             :: GH.Name GH.Repo
   , _repoStatsTimestamp        :: UTCTime
-  , _repoStatsStars            :: Int
-  , _repoStatsForks            :: Int
+  , _repoStatsStars            :: Stars
+  , _repoStatsForks            :: Forks
   , _repoStatsPopularReferrers :: Vector GH.Referrer
   , _repoStatsPopularPaths     :: Vector GH.PopularPath
   , _repoStatsViews            :: GH.Views

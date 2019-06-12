@@ -18,10 +18,9 @@ import           Data.Foldable                    (Foldable, toList)
 import           Data.Int                         (Int64)
 import           Data.String                      (fromString)
 import           Data.Time.Clock                  (UTCTime)
-import           Database.SQLite.Simple           (Connection,
-                                                   ToRow (toRow), execute,
-                                                   executeMany, execute_,
-                                                   lastInsertRowId)
+import           Database.SQLite.Simple           (Connection, ToRow (toRow),
+                                                   execute, executeMany,
+                                                   execute_, lastInsertRowId)
 import           Database.SQLite.Simple.FromField (FromField)
 import           Database.SQLite.Simple.ToField   (ToField)
 import           Database.SQLite.SimpleErrors     (runDBAction)
@@ -29,8 +28,9 @@ import           GitHub                           (Name, Repo, untagName)
 import           GitHub.Data.Traffic              (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
 
 import           GhStats.Types                    (AsSQLiteResponse (_SQLiteResponse),
+                                                   Forks,
                                                    HasConnection (connection),
-                                                   RepoStats,
+                                                   RepoStats, Stars,
                                                    repoStatsPopularPaths,
                                                    repoStatsPopularReferrers,
                                                    repoStatsTimestamp)
@@ -133,8 +133,8 @@ data DbRepoStats =
     dbRepoStatsId        :: !(Id DbReferrer)
   , dbRepoStatsName      :: !(Name Repo)
   , dbRepoStatsTimestamp :: !UTCTime
-  , dbRepoStatsStars     :: !Int
-  , dbRepoStatsForks     :: !Int
+  , dbRepoStatsStars     :: !Stars
+  , dbRepoStatsForks     :: !Forks
   }
 
 data DbReferrer =
