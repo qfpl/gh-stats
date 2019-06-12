@@ -2,19 +2,25 @@
 
 module GhStats.Main where
 
-import           Control.Monad.Except (runExceptT)
-import qualified Data.ByteString.Lazy as LBS
-import           Data.Foldable        (toList)
-import           Data.Sv              (defaultEncodeOptions, encodeNamed)
-import           GitHub               (Name, Organization)
-import           Options.Applicative  (Parser, command, execParser, fullDesc,
-                                       header, help, helper, info, long,
-                                       metavar, progDesc, short, strOption,
-                                       subparser, (<**>))
+import           Control.Exception.Lens (throwing)
+import           Control.Monad          ((<=<))
+import           Control.Monad.Except   (ExceptT, MonadError, runExceptT)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Reader   (runReaderT, ReaderT)
+import qualified Data.ByteString.Lazy   as LBS
+import           Data.Foldable          (toList)
+import           Data.Sv                (defaultEncodeOptions, encodeNamed)
+import           Database.SQLite.Simple (open, Connection)
+import qualified GitHub                 as GH
+import           Options.Applicative    (Parser, command, execParser, fullDesc,
+                                         header, help, helper, info, long,
+                                         metavar, progDesc, short, strOption,
+                                         subparser, (<**>))
 
-import           GhStats              (Token, getHighLevelOrgStats, getOrgStats,
-                                       highLevelRepoStatsEnc)
-import           GhStats.Db           (addToDb)
+import           GhStats                (getHighLevelOrgStats, getOrgStats)
+import           GhStats.Db             (addToDb, initDb, runDb)
+import           GhStats.Types          (AsGhError, Error, Token,
+                                         highLevelRepoStatsEnc, _GhError)
 
 go ::
   Command
@@ -25,23 +31,24 @@ go = \case
   Serve _orgName _dbFile _token -> error "todo: serve"
 
 csv ::
-  Name Organization
+  GH.Name GH.Organization
   -> Token
   -> IO ()
-csv orgName token = do
+csv orgName token = print <=< runExceptT $ do
   let
     dumpCsv = LBS.putStr . encodeNamed highLevelRepoStatsEnc defaultEncodeOptions . toList
-  es <- runExceptT $ getHighLevelOrgStats token orgName
-  either print dumpCsv es
+  es <- getHighLevelOrgStats token orgName
+  (liftIO :: IO () -> ExceptT Error IO ()) $ dumpCsv es
 
 updateDb ::
-  Name Organization
+  GH.Name GH.Organization
   -> FilePath
   -> Token
   -> IO ()
-updateDb orgName dbFile token = printErrors . runExceptT $ do
+updateDb orgName dbFile token = print <=< runExceptT $ do
+  conn <- runDb $ open dbFile
   repoStats <- getOrgStats token orgName
-  addToDb repoStats
+  runReaderT (addToDb repoStats) conn :: ExceptT Error IO ()
 
 main ::
   IO ()
@@ -55,9 +62,9 @@ main =
         )
 
 data Command =
-  Csv (Name Organization) Token                -- ^ Output the per-repository summary as a CSV to stdout
-  | UpdateDb (Name Organization) FilePath Token -- ^ Insert the latest summary into the SQLite DB
-  | Serve (Name Organization) FilePath Token    -- ^ Serve the latest summary as a web page
+  Csv (GH.Name GH.Organization) Token                -- ^ Output the per-repository summary as a CSV to stdout
+  | UpdateDb (GH.Name GH.Organization) FilePath Token -- ^ Insert the latest summary into the SQLite DB
+  | Serve (GH.Name GH.Organization) FilePath Token    -- ^ Serve the latest summary as a web page
   deriving (Eq, Show)
 
 dbParser ::
@@ -71,7 +78,7 @@ dbParser =
     )
 
 orgParser ::
-  Parser (Name Organization)
+  Parser (GH.Name GH.Organization)
 orgParser =
   strOption
     ( long "org"

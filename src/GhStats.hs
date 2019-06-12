@@ -1,71 +1,85 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE NamedFieldPuns  #-}
 
 module GhStats where
 
-import           Control.Monad.Except           (ExceptT (ExceptT))
-import           Control.Monad.IO.Class         (liftIO)
+import           Control.Monad                  ((<=<))
+import           Control.Monad.Error.Lens       (throwing)
+import           Control.Monad.Except           (MonadError)
+import           Control.Monad.IO.Class         (MonadIO, liftIO)
 import           Data.Maybe                     (fromMaybe)
 import           Data.Time.Clock                (getCurrentTime)
 import           Data.Vector                    (Vector)
-import           GitHub                         (Auth (OAuth), Error, Name,
-                                                 Organization, Repo (..),
-                                                 SimpleOwner (simpleOwnerLogin))
+import qualified GitHub                         as GH
 import           GitHub.Data.Traffic            (Period (Day))
 import           GitHub.Endpoints.Repos         (organizationRepos)
 import           GitHub.Endpoints.Repos.Traffic (clones', popularPaths',
                                                  popularReferrers', views')
 
-import           GhStats.Types                  (Forks (Forks), HighLevelRepoStats (HighLevelRepoStats),
+import           GhStats.Types                  (AsGhError, Forks (Forks), HighLevelRepoStats (HighLevelRepoStats),
                                                  RepoStats (RepoStats),
                                                  Stars (Stars),
-                                                 Token (getToken))
+                                                 Token (getToken), _GhError)
 
+
+type GhConstraints e m = (MonadIO m, MonadError e m, AsGhError e)
 
 -- TODO: use validation to collect all failures.
 getOrgStats ::
-  Token
-  -> Name Organization
-  -> ExceptT Error IO (Vector RepoStats)
+  GhConstraints e m
+  => Token
+  -> GH.Name GH.Organization
+  -> m (Vector RepoStats)
 getOrgStats tok org =
-  traverse (toRepoStats tok) =<< ExceptT (organizationRepos org)
+  traverse (toRepoStats tok) =<< handleGhReq (organizationRepos org)
 
 getHighLevelOrgStats ::
-  Token
-  -> Name Organization
-  -> ExceptT Error IO (Vector HighLevelRepoStats)
+  GhConstraints e m
+  => Token
+  -> GH.Name GH.Organization
+  -> m (Vector HighLevelRepoStats)
 getHighLevelOrgStats tok org =
-  traverse (toHighLevelRepoStats tok) =<< ExceptT (organizationRepos org)
+  traverse (toHighLevelRepoStats tok) =<< handleGhReq (organizationRepos org)
 
 toRepoStats ::
-  Token
-  -> Repo
-  -> ExceptT Error IO RepoStats
-toRepoStats tok Repo{repoName, repoOwner, repoForks, repoStargazersCount} =
+  GhConstraints e m
+  => Token
+  -> GH.Repo
+  -> m RepoStats
+toRepoStats tok GH.Repo{GH.repoName, GH.repoOwner, GH.repoForks, GH.repoStargazersCount} =
   let
-    auth = OAuth . getToken $ tok
-    owner = simpleOwnerLogin repoOwner
+    auth = GH.OAuth . getToken $ tok
+    owner = GH.simpleOwnerLogin repoOwner
   in
     RepoStats repoName
     <$> liftIO getCurrentTime
     <*> pure (Stars repoStargazersCount)
     <*> pure (Forks $ fromMaybe 0 repoForks)
-    <*> ExceptT (popularReferrers' auth owner repoName)
-    <*> ExceptT (popularPaths' auth owner repoName)
-    <*> ExceptT (views' auth owner repoName Day)
-    <*> ExceptT (clones' auth owner repoName Day)
+    <*> handleGhReq (popularReferrers' auth owner repoName)
+    <*> handleGhReq (popularPaths' auth owner repoName)
+    <*> handleGhReq (views' auth owner repoName Day)
+    <*> handleGhReq (clones' auth owner repoName Day)
 
 toHighLevelRepoStats ::
-  Token
-  -> Repo
-  -> ExceptT Error IO HighLevelRepoStats
-toHighLevelRepoStats tok Repo{repoName, repoOwner, repoForks, repoStargazersCount} =
+  GhConstraints e m
+  => Token
+  -> GH.Repo
+  -> m HighLevelRepoStats
+toHighLevelRepoStats tok GH.Repo{GH.repoName, GH.repoOwner, GH.repoForks, GH.repoStargazersCount} =
   let
-    auth = OAuth . getToken $ tok
-    owner = simpleOwnerLogin repoOwner
+    auth = GH.OAuth . getToken $ tok
+    owner = GH.simpleOwnerLogin repoOwner
   in
     HighLevelRepoStats repoName
     <$> liftIO getCurrentTime
     <*> pure (Stars repoStargazersCount)
     <*> pure (Forks $ fromMaybe 0 repoForks)
-    <*> ExceptT (views' auth owner repoName Day)
-    <*> ExceptT (clones' auth owner repoName Day)
+    <*> handleGhReq (views' auth owner repoName Day)
+    <*> handleGhReq (clones' auth owner repoName Day)
+
+handleGhReq ::
+  GhConstraints e m
+  => IO (Either GH.Error a)
+  -> m a
+handleGhReq =
+  either (throwing _GhError) pure <=< liftIO

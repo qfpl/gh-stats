@@ -12,7 +12,7 @@ import           Control.Lens                       (Lens', Prism',
                                                      makeClassyPrisms,
                                                      makeLenses, makeWrapped,
                                                      prism, to, (&), (^.),
-                                                     _Wrapped)
+                                                     _Wrapped, lens)
 import           Data.ByteString                    (ByteString)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -29,6 +29,9 @@ import           Network.HTTP.Client                (HttpException)
 
 class HasConnection s where
   connection :: Lens' s Connection
+
+instance HasConnection Connection where
+  connection = lens id (const id)
 
 data Error =
   SQLiteError SQLiteResponse
