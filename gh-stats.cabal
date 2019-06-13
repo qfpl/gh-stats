@@ -17,17 +17,18 @@ extra-source-files:  ChangeLog.md
 common base { build-depends: base >=4.11 && <4.13 }
 common github { build-depends: github >=0.22 && <0.23 }
 common sqlite-simple { build-depends: sqlite-simple >=0.4 && <0.5 }
+common mtl { build-depends: mtl >=2.2 && <2.3 }
 
 library
   import:              base
                      , github
+                     , mtl
                      , sqlite-simple
 
   build-depends:
                        bytestring == 0.10.*
                      , http-client >=0.5 && <0.6
                      , lens == 4.17.*
-                     , mtl >=2.2 && <2.3
                      , optparse-applicative == 0.14.*
                      , sqlite-simple-errors >=0.6 && <0.7
                      , sv == 1.3.*
@@ -57,12 +58,14 @@ executable gh-stats
 test-suite tasty
   import:              base
                      , github
+                     , mtl
                      , sqlite-simple
   hs-source-dirs:      test
   main-is:             Main.hs
+  other-modules:       GhStats.DbTest
   build-depends:
                        gh-stats
-                     , hedgehog >=0.6 && <0.7
+                     , hedgehog >=1.0 && <1.1
                      , tasty >=1.2 && <1.3
                      , tasty-hedgehog >=1.0 && <1.1
   type:                exitcode-stdio-1.0

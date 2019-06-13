@@ -4,18 +4,21 @@ self: super: {
       # Newer versions we need.
       concurrent-output = hsuper.concurrent-output_1_10_10;
       sv-core = hsuper.callHackage "sv-core" "0.4.1" {};
+      hedgehog = hsuper.hedgehog_1_0;
 
       # Things that work with our newer versions of things.
       cassava = doJailbreak hsuper.cassava;
       direct-sqlite = doJailbreak hsuper.direct-sqlite;
-      hw-prim = doJailbreak hsuper.hw-prim;
-      hw-bits = doJailbreak hsuper.hw-bits;
-      hw-rankselect-base = doJailbreak hsuper.hw-rankselect-base;
-      hw-rankselect = doJailbreak (hself.callHackage "hw-rankselect" "0.13.0.0" {});
-      hw-excess = doJailbreak hsuper.hw-excess;
       hw-balancedparens = doJailbreak hsuper.hw-balancedparens;
+      hw-bits = doJailbreak hsuper.hw-bits;
+      hw-excess = doJailbreak hsuper.hw-excess;
+      hw-prim = doJailbreak hsuper.hw-prim;
+      hw-rankselect = doJailbreak (hself.callHackage "hw-rankselect" "0.13.0.0" {});
+      hw-rankselect-base = doJailbreak hsuper.hw-rankselect-base;
+      hw-simd = doJailbreak hsuper.hw-simd;
       psqueues = doJailbreak hsuper.psqueues;
       sqlite-simple = doJailbreak hsuper.sqlite-simple;
+      validation = doJailbreak hsuper.validation;
       vault = doJailbreak hsuper.vault;
 
       # Revision 1 removes upper bound on hashable. This is what latest hackage-packages.nix has.
