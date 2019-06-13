@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -30,21 +31,22 @@ import           GitHub.Data.Traffic              (PopularPath, Referrer (Referr
 import           GhStats.Types                    (AsSQLiteResponse (_SQLiteResponse),
                                                    Forks,
                                                    HasConnection (connection),
-                                                   RepoStats, Stars,
-                                                   repoStatsPopularPaths,
-                                                   repoStatsPopularReferrers,
-                                                   repoStatsTimestamp)
+                                                   RepoStats (..), Stars,
+                                                   repoStatsPopularReferrers)
 
 newtype Id a = Id Int64
   deriving (Eq, Show, FromField, ToField)
 
-initDb ::
+type DbConstraints e r m =
   ( MonadReader r m
   , HasConnection r
   , MonadIO m
   , AsSQLiteResponse e
   , MonadError e m
   )
+
+initDb ::
+  DbConstraints e r m
   => m ()
 initDb =
   let
@@ -74,45 +76,38 @@ initDb =
 
 
 addToDb ::
-  ( MonadError e m
-  , AsSQLiteResponse e
-  , MonadReader r m
+  ( DbConstraints e r m
   , Traversable t
-  , HasConnection r
-  , MonadIO m
   )
   => t RepoStats
   -> m ()
 addToDb =
   void . traverse insertRepoStats
 
-insertRepoStats ::
-  ( MonadError e m
-  , AsSQLiteResponse e
-  , MonadReader r m
-  , HasConnection r
-  , MonadIO m
-  )
+insertRepoStatsTree ::
+  DbConstraints e r m
   => RepoStats
   -> m (Id DbRepoStats)
-insertRepoStats repoStats =
+insertRepoStatsTree rs = do
+  rsId <- insertRepoStats rs
+  insertReferrers rsId $ rs ^. repoStatsPopularReferrers
+  -- insertPaths rsId $ repoStats ^. repoStatsPopularPaths
+  pure rsId
+
+insertRepoStats ::
+  DbConstraints e r m
+  => RepoStats
+  -> m (Id DbRepoStats)
+insertRepoStats rs =
   let
     q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
   in
     withConnM $ \conn -> do
-      runDb $ execute conn q repoStats
-      rsId <- runDb . fmap Id $ lastInsertRowId conn
-      insertReferrers rsId $ repoStats ^. repoStatsPopularReferrers
-      -- insertPaths rsId $ repoStats ^. repoStatsPopularPaths
-      pure rsId
-
+      runDb . execute conn q $ toDbRepoStats rs
+      runDb . fmap Id $ lastInsertRowId conn
 
 insertReferrers ::
-  ( MonadError e m
-  , AsSQLiteResponse e
-  , MonadReader r m
-  , HasConnection r
-  , MonadIO m
+  ( DbConstraints e r m
   , Foldable t
   , FunctorWithIndex Int t
   , TraversableWithIndex Int t
@@ -130,12 +125,22 @@ insertReferrers rsId refs = do
 
 data DbRepoStats =
   DbRepoStats {
-    dbRepoStatsId        :: !(Id DbReferrer)
-  , dbRepoStatsName      :: !(Name Repo)
-  , dbRepoStatsTimestamp :: !UTCTime
-  , dbRepoStatsStars     :: !Stars
-  , dbRepoStatsForks     :: !Forks
+    _dbRepoStatsId        :: !(Id DbReferrer)
+  , _dbRepoStatsName      :: !(Name Repo)
+  , _dbRepoStatsTimestamp :: !UTCTime
+  , _dbRepoStatsStars     :: !Stars
+  , _dbRepoStatsForks     :: !Forks
   }
+
+instance ToRow DbRepoStats where
+  toRow DbRepoStats {..} =
+    toRow (_dbRepoStatsId, untagName _dbRepoStatsName, _dbRepoStatsTimestamp, _dbRepoStatsStars, _dbRepoStatsForks)
+
+toDbRepoStats ::
+  RepoStats
+  -> DbRepoStats
+toDbRepoStats RepoStats{_repoStatsName, _repoStatsTimestamp, _repoStatsStars, _repoStatsForks} =
+  DbRepoStats (Id 0) _repoStatsName _repoStatsTimestamp _repoStatsStars _repoStatsForks
 
 data DbReferrer =
   DbReferrer {
@@ -152,24 +157,14 @@ instance ToRow DbReferrer where
     toRow (dbRefPosition, untagName dbRefName, dbRefCount, dbRefUniques, dbRefRepoId)
 
 withConn ::
-  ( MonadReader r m
-  , HasConnection r
-  , MonadError e m
-  , AsSQLiteResponse e
-  , MonadIO m
-  )
+  DbConstraints e r m
   => (Connection -> IO a)
   -> m a
 withConn f =
     join $ reader (runDb . f . view connection)
 
 withConnM ::
-  ( MonadReader r m
-  , HasConnection r
-  , MonadError e m
-  , AsSQLiteResponse e
-  , MonadIO m
-  )
+  DbConstraints e r m
   => (Connection -> m a)
   -> m a
 withConnM f =
