@@ -1,6 +1,7 @@
-{ mkDerivation, base, bytestring, github, http-client, lens, mtl
-, optparse-applicative, sqlite-simple, sqlite-simple-errors, stdenv
-, sv, tasty, text, time, vector
+{ mkDerivation, base, bytestring, github, hedgehog, http-client
+, lens, mtl, optparse-applicative, sqlite-simple
+, sqlite-simple-errors, stdenv, sv, tasty, tasty-hedgehog, text
+, time, vector
 }:
 mkDerivation {
   pname = "gh-stats";
@@ -13,7 +14,9 @@ mkDerivation {
     sqlite-simple sqlite-simple-errors sv text time vector
   ];
   executableHaskellDepends = [ base ];
-  testHaskellDepends = [ base github sqlite-simple tasty ];
+  testHaskellDepends = [
+    base github hedgehog sqlite-simple tasty tasty-hedgehog
+  ];
   homepage = "https://qfpl.io";
   description = "Pull Github stats for an organisation and its repos";
   license = stdenv.lib.licenses.bsd3;
