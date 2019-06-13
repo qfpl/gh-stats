@@ -82,28 +82,28 @@ addToDb ::
   => t RepoStats
   -> m ()
 addToDb =
-  void . traverse insertRepoStats
+  void . traverse insertRepoStatsTree
 
 insertRepoStatsTree ::
   DbConstraints e r m
   => RepoStats
   -> m (Id DbRepoStats)
 insertRepoStatsTree rs = do
-  rsId <- insertRepoStats rs
+  rsId <- insertRepoStats $ toDbRepoStats rs
   insertReferrers rsId $ rs ^. repoStatsPopularReferrers
   -- insertPaths rsId $ repoStats ^. repoStatsPopularPaths
   pure rsId
 
 insertRepoStats ::
   DbConstraints e r m
-  => RepoStats
+  => DbRepoStats
   -> m (Id DbRepoStats)
-insertRepoStats rs =
+insertRepoStats drs =
   let
     q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
   in
     withConnM $ \conn -> do
-      runDb . execute conn q $ toDbRepoStats rs
+      runDb $ execute conn q drs
       runDb . fmap Id $ lastInsertRowId conn
 
 insertReferrers ::

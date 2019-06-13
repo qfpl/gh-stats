@@ -8,11 +8,14 @@
 
 module GhStats.Types where
 
-import           Control.Lens                       (Lens', Prism',
+import           Control.Exception                  (Exception)
+import           Control.Lens                       (Lens', Prism', lens,
                                                      makeClassyPrisms,
                                                      makeLenses, makeWrapped,
                                                      prism, to, (&), (^.),
-                                                     _Wrapped, lens)
+                                                     _Wrapped)
+import           Control.Monad.Except               (ExceptT)
+import           Control.Monad.Reader               (ReaderT)
 import           Data.ByteString                    (ByteString)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -27,6 +30,10 @@ import           Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 import qualified GitHub                             as GH
 import           Network.HTTP.Client                (HttpException)
 
+newtype GhStatsM a =
+  GhStatsM (ReaderT Connection (ExceptT Error IO) a)
+  deriving (Functor, Applicative, Monad)
+
 class HasConnection s where
   connection :: Lens' s Connection
 
@@ -40,6 +47,8 @@ data Error =
 
 makeClassyPrisms ''Error
 makeClassyPrisms ''SQLiteResponse
+
+instance Exception Error
 
 -- Writing the class by hand because of naming clashes
 class AsGhError e where
