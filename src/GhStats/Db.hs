@@ -131,6 +131,7 @@ data DbRepoStats =
   , _dbRepoStatsStars     :: !Stars
   , _dbRepoStatsForks     :: !Forks
   }
+  deriving (Eq, Show)
 
 instance ToRow DbRepoStats where
   toRow DbRepoStats {..} =

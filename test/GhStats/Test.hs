@@ -12,13 +12,12 @@ import           Hedgehog               (PropertyT)
 
 import           GhStats.Types          (Error)
 
-newtype GhStatsTestM a =
-  GhStatsTestM (PropertyT (ReaderT Connection (ExceptT Error IO)) a)
-  deriving (Functor, Applicative, Monad)
+type GhStatsTestM a =
+  PropertyT (ReaderT Connection (ExceptT Error IO)) a
 
 runGhStatsTestM ::
   Connection
   -> GhStatsTestM a
   -> PropertyT IO a
-runGhStatsTestM conn (GhStatsTestM rem) =
-  fmap (either throw id) . runExceptT . runReaderT rem $ conn
+runGhStatsTestM conn =
+  hoist $ \rem -> fmap (either throw id) . runExceptT . runReaderT rem $ conn
