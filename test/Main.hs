@@ -11,6 +11,7 @@ import           GhStats.DbTest         (testDb)
 
 main :: IO ()
 main = do
+  -- TODO: start by deleting old DB file
   conn <- open testDbPath
   runGhStatsM conn initDb
   defaultMain $ tests conn

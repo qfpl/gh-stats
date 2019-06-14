@@ -105,7 +105,7 @@ insertRepoStats ::
   -> m (Id DbRepoStats)
 insertRepoStats drs =
   let
-    q = "INSERT INTO repos (id, name, timestamp, stars, forks) VALUES (?,?,?,?,?)"
+    q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
   in
     withConnM $ \conn -> do
       runDb $ execute conn q drs
@@ -148,7 +148,7 @@ insertReferrers rsId refs = do
 
 data DbRepoStats =
   DbRepoStats {
-    _dbRepoStatsId        :: !(Id DbReferrer)
+    _dbRepoStatsId        :: !(Maybe (Id DbReferrer))
   , _dbRepoStatsName      :: !(Name Repo)
   , _dbRepoStatsTimestamp :: !UTCTime
   , _dbRepoStatsStars     :: !Stars
@@ -158,7 +158,7 @@ data DbRepoStats =
 
 instance ToRow DbRepoStats where
   toRow DbRepoStats {..} =
-    toRow (_dbRepoStatsId, untagName _dbRepoStatsName, _dbRepoStatsTimestamp, _dbRepoStatsStars, _dbRepoStatsForks)
+    toRow (untagName _dbRepoStatsName, _dbRepoStatsTimestamp, _dbRepoStatsStars, _dbRepoStatsForks)
 
 instance FromRow DbRepoStats where
   fromRow =
@@ -171,7 +171,7 @@ toDbRepoStats ::
   RepoStats
   -> DbRepoStats
 toDbRepoStats RepoStats{_repoStatsName, _repoStatsTimestamp, _repoStatsStars, _repoStatsForks} =
-  DbRepoStats (Id 0) _repoStatsName _repoStatsTimestamp _repoStatsStars _repoStatsForks
+  DbRepoStats Nothing _repoStatsName _repoStatsTimestamp _repoStatsStars _repoStatsForks
 
 data DbReferrer =
   DbReferrer {

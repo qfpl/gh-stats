@@ -2,16 +2,17 @@
 
 module GhStats.DbTest where
 
-import           Control.Monad              (void)
+import           Control.Monad              (void, (<=<))
 import           Control.Monad.Except       (MonadError)
 import           Control.Monad.IO.Class     (MonadIO)
 import           Control.Monad.Reader       (MonadReader)
+import Data.Maybe (fromJust)
 import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
                                              secondsToDiffTime)
 import           Database.SQLite.Simple     (Connection)
 import qualified GitHub                     as GH
 
-import           Hedgehog                   (MonadGen, forAll, property)
+import           Hedgehog                   (MonadGen, forAll, property, tripping, failure, (===))
 import qualified Hedgehog.Gen               as Gen
 import           Hedgehog.Internal.Property (forAllT)
 import qualified Hedgehog.Range             as Range
@@ -19,11 +20,11 @@ import           Test.Tasty                 (TestTree, testGroup)
 import           Test.Tasty.Hedgehog        (testProperty)
 
 import           GhStats.Db                 (DbRepoStats (DbRepoStats), Id (Id),
-                                             initDb, insertRepoStats)
+                                             initDb, insertRepoStats, selectRepoStats)
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
-                                             HasConnection, Stars (..))
+                                             HasConnection, Stars (..), runGhStatsM)
 
-import           GhStats.Test               (runGhStatsPropertyT)
+import           GhStats.Test               (runGhStatsPropertyT, GhStatsPropertyT)
 
 type TestConstraints e r m = (
     MonadError e m
@@ -47,17 +48,16 @@ testRepoStatsRoundTrip ::
 testRepoStatsRoundTrip conn =
   testProperty "select . insert" . property . runGhStatsPropertyT conn $ do
     drs <- forAllT genDbRepoStats
-    void $ insertRepoStats drs
-    -- drsId <- insertRepoStats drs
-    -- selectRepoStats drsId
+    drsId <- insertRepoStats drs
+    maybe failure (=== drs) =<< selectRepoStats drsId
 
 genDbRepoStats ::
    MonadGen m
    => m DbRepoStats
 genDbRepoStats =
   DbRepoStats
-  <$> genId
-  <*> genName
+  Nothing
+  <$> genName
   <*> genUTCTime
   <*> genStars
   <*> genForks
