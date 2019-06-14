@@ -17,18 +17,23 @@ import           Control.Monad.IO.Class           (MonadIO, liftIO)
 import           Control.Monad.Reader             (MonadReader, reader)
 import           Data.Foldable                    (Foldable, toList)
 import           Data.Int                         (Int64)
+import           Data.Proxy                       (Proxy (Proxy))
 import           Data.String                      (fromString)
+import qualified Data.Text                        as T
 import           Data.Time.Clock                  (UTCTime)
-import           Database.SQLite.Simple           (Connection, ToRow (toRow),
-                                                   execute, executeMany,
-                                                   execute_, lastInsertRowId)
+import           Database.SQLite.Simple           (Connection, Only (Only),
+                                                   ToRow (toRow), execute,
+                                                   executeMany, execute_, field,
+                                                   lastInsertRowId, query)
 import           Database.SQLite.Simple.FromField (FromField)
+import           Database.SQLite.Simple.FromRow   (FromRow (fromRow))
 import           Database.SQLite.Simple.ToField   (ToField)
 import           Database.SQLite.SimpleErrors     (runDBAction)
-import           GitHub                           (Name, Repo, untagName)
+import           GitHub                           (Name, Repo, mkName,
+                                                   untagName)
 import           GitHub.Data.Traffic              (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
 
-import           GhStats.Types                    (AsSQLiteResponse (_SQLiteResponse),
+import           GhStats.Types                    (AsError (_TooManyResults), AsSQLiteResponse (_SQLiteResponse),
                                                    Forks,
                                                    HasConnection (connection),
                                                    RepoStats (..), Stars,
@@ -100,11 +105,29 @@ insertRepoStats ::
   -> m (Id DbRepoStats)
 insertRepoStats drs =
   let
-    q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
+    q = "INSERT INTO repos (id, name, timestamp, stars, forks) VALUES (?,?,?,?,?)"
   in
     withConnM $ \conn -> do
       runDb $ execute conn q drs
       runDb . fmap Id $ lastInsertRowId conn
+
+selectRepoStats ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => Id DbRepoStats
+  -> m (Maybe DbRepoStats)
+selectRepoStats (Id i) =
+  let
+    q = "SELECT (id, name, timestamp, stars, forks) FROM repos WHERE id = ?"
+    idT = T.pack . show $ i
+  in
+    withConnM $ \conn -> do
+      drss <- runDb $ query conn q (Only i)
+      case drss of
+        [drs] -> pure $ Just drs
+        (_:_:_) -> throwing _TooManyResults $ "Found multiple records in `repos` with id " <> idT
+        _ -> pure Nothing
 
 insertReferrers ::
   ( DbConstraints e r m
@@ -136,6 +159,13 @@ data DbRepoStats =
 instance ToRow DbRepoStats where
   toRow DbRepoStats {..} =
     toRow (_dbRepoStatsId, untagName _dbRepoStatsName, _dbRepoStatsTimestamp, _dbRepoStatsStars, _dbRepoStatsForks)
+
+instance FromRow DbRepoStats where
+  fromRow =
+    let
+      nameField = mkName (Proxy :: Proxy Repo) <$> field
+    in
+      DbRepoStats <$> field <*> nameField <*> field <*> field <*> field
 
 toDbRepoStats ::
   RepoStats

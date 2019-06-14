@@ -65,6 +65,7 @@ test-suite tasty
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:       GhStats.DbTest
+                     , GhStats.Test
   build-depends:
                        gh-stats
                      , hedgehog >=1.0 && <1.1

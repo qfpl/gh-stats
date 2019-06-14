@@ -12,12 +12,13 @@ import           Hedgehog               (PropertyT)
 
 import           GhStats.Types          (Error)
 
-type GhStatsTestM a =
+-- For use in properties, such that we can use runGhStatsPropertyT to get to a Property
+type GhStatsPropertyT a =
   PropertyT (ReaderT Connection (ExceptT Error IO)) a
 
-runGhStatsTestM ::
+runGhStatsPropertyT ::
   Connection
-  -> GhStatsTestM a
+  -> GhStatsPropertyT a
   -> PropertyT IO a
-runGhStatsTestM conn =
+runGhStatsPropertyT conn =
   hoist $ \rem -> fmap (either throw id) . runExceptT . runReaderT rem $ conn

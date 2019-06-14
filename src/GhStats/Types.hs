@@ -8,14 +8,16 @@
 
 module GhStats.Types where
 
-import           Control.Exception                  (Exception)
+import           Control.Exception                  (Exception, throw)
 import           Control.Lens                       (Lens', Prism', lens,
                                                      makeClassyPrisms,
                                                      makeLenses, makeWrapped,
                                                      prism, to, (&), (^.),
                                                      _Wrapped)
-import           Control.Monad.Except               (ExceptT)
-import           Control.Monad.Reader               (ReaderT)
+import           Control.Monad.Except               (ExceptT, runExceptT, MonadError)
+import           Control.Monad.IO.Class             (MonadIO)
+import           Control.Monad.Reader               (MonadReader, ReaderT,
+                                                     runReaderT)
 import           Data.ByteString                    (ByteString)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -32,7 +34,14 @@ import           Network.HTTP.Client                (HttpException)
 
 newtype GhStatsM a =
   GhStatsM (ReaderT Connection (ExceptT Error IO) a)
-  deriving (Functor, Applicative, Monad)
+  deriving (Functor, Applicative, Monad, MonadReader Connection, MonadIO, MonadError Error)
+
+runGhStatsM ::
+  Connection
+  -> GhStatsM a
+  -> IO a
+runGhStatsM conn (GhStatsM m) =
+  fmap (either throw id) . runExceptT . runReaderT m $ conn
 
 class HasConnection s where
   connection :: Lens' s Connection
@@ -43,6 +52,7 @@ instance HasConnection Connection where
 data Error =
   SQLiteError SQLiteResponse
   | GithubError GH.Error
+  | TooManyResults Text
   deriving (Show)
 
 makeClassyPrisms ''Error

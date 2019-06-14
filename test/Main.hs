@@ -1,20 +1,24 @@
 module Main where
 
-import Test.Tasty (defaultMain, TestTree, testGroup)
+import           Test.Tasty             (TestTree, defaultMain, testGroup)
 
-import Database.SQLite.Simple (open)
+import           Database.SQLite.Simple (Connection, open)
 
-import GhStats.DbTest (testDb)
+import           GhStats.Db             (initDb)
+import           GhStats.Types          (runGhStatsM)
+
+import           GhStats.DbTest         (testDb)
 
 main :: IO ()
 main = do
-  conn <- open testDb
-  defaultMain tests
+  conn <- open testDbPath
+  runGhStatsM conn initDb
+  defaultMain $ tests conn
 
-testDb :: FilePath
-testDb = "test.sqlite"
+testDbPath :: FilePath
+testDbPath = "test.sqlite"
 
-tests :: TestTree
-tests = testGroup "gh-stats" [
-   testDb
+tests :: Connection -> TestTree
+tests conn = testGroup "gh-stats" [
+   testDb conn
  ]

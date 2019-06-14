@@ -6,7 +6,8 @@ import           Control.Monad              (void)
 import           Control.Monad.Except       (MonadError)
 import           Control.Monad.IO.Class     (MonadIO)
 import           Control.Monad.Reader       (MonadReader)
-import           Data.Time                  (UTCTime)
+import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
+                                             secondsToDiffTime)
 import           Database.SQLite.Simple     (Connection)
 import qualified GitHub                     as GH
 
@@ -22,7 +23,7 @@ import           GhStats.Db                 (DbRepoStats (DbRepoStats), Id (Id),
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
                                              HasConnection, Stars (..))
 
-import           GhStats.Test               (runGhStatsTestM)
+import           GhStats.Test               (runGhStatsPropertyT)
 
 type TestConstraints e r m = (
     MonadError e m
@@ -44,9 +45,10 @@ testRepoStatsRoundTrip ::
   Connection
   -> TestTree
 testRepoStatsRoundTrip conn =
-  testProperty "select . insert" . property . runGhStatsTestM conn $ do
+  testProperty "select . insert" . property . runGhStatsPropertyT conn $ do
     drs <- forAllT genDbRepoStats
     void $ insertRepoStats drs
+    -- drsId <- insertRepoStats drs
     -- selectRepoStats drsId
 
 genDbRepoStats ::
@@ -64,30 +66,32 @@ genStars ::
   MonadGen m
   => m Stars
 genStars =
-  Stars <$> (Gen.int (Range.linear 0 1000000))
+  Stars <$> Gen.int (Range.linear 0 1000000)
 
 genForks ::
   MonadGen m
   => m Forks
 genForks =
-  Forks <$> (Gen.int (Range.linear 0 1000000))
+  Forks <$> Gen.int (Range.linear 0 1000000)
 
 genId ::
   MonadGen m
   => m (Id a)
 genId =
-  Id <$> (Gen.int64 Range.linearBounded)
+  Id <$> Gen.int64 Range.linearBounded
 
 genName ::
   MonadGen m
   => m (GH.Name a)
 genName =
-  N <$> Gen.text
+  -- TODO: should probably change this to `unicode` once hedgehog is updated
+  -- (https://github.com/hedgehogqa/haskell-hedgehog/pull/303).
+  GH.mkName (undefined :: GH.Name a) <$> Gen.text (Range.linear 0 30) Gen.unicodeAll
 
-genTimestamp
+genUTCTime
   :: MonadGen n
   => n UTCTime
-genTimestamp =
+genUTCTime =
   let
     gYear = Gen.int (Range.linearFrom 1900 1970 2500)
     gMonth = Gen.int (Range.linear 1 12)
@@ -98,4 +102,4 @@ genTimestamp =
     gUTCTimeDay = fromGregorian . fromIntegral <$> gYear <*> gMonth <*> gDay
     gDiffTime = secondsToDiffTime . fromIntegral <$> gSeconds
   in
-    fmap (utcToLocalTime utc) . UTCTime <$> gUTCTimeDay <*> gDiffTime
+    UTCTime <$> gUTCTimeDay <*> gDiffTime
