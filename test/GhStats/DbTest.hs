@@ -86,7 +86,7 @@ genName ::
 genName =
   -- TODO: should probably change this to `unicode` once hedgehog is updated
   -- (https://github.com/hedgehogqa/haskell-hedgehog/pull/303).
-  GH.mkName (undefined :: GH.Name a) <$> Gen.text (Range.linear 0 30) Gen.unicodeAll
+  GH.mkName (undefined :: GH.Name a) <$> Gen.text (Range.linear 0 30) Gen.ascii
 
 genUTCTime
   :: MonadGen n
