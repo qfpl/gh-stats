@@ -19,7 +19,7 @@ import qualified Hedgehog.Range             as Range
 import           Test.Tasty                 (TestTree, testGroup)
 import           Test.Tasty.Hedgehog        (testProperty)
 
-import           GhStats.Db                 (DbRepoStats (DbRepoStats), Id (Id),
+import           GhStats.Db                 (DbRepoStats (DbRepoStats, _dbRepoStatsId), Id (Id),
                                              initDb, insertRepoStats, selectRepoStats)
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
                                              HasConnection, Stars (..), runGhStatsM)
@@ -49,7 +49,10 @@ testRepoStatsRoundTrip conn =
   testProperty "select . insert" . property . runGhStatsPropertyT conn $ do
     drs <- forAllT genDbRepoStats
     drsId <- insertRepoStats drs
-    maybe failure (=== drs) =<< selectRepoStats drsId
+    let
+      drsWithId =
+        drs {_dbRepoStatsId = Just drsId}
+    maybe failure (=== drsWithId) =<< selectRepoStats drsId
 
 genDbRepoStats ::
    MonadGen m
@@ -86,7 +89,7 @@ genName ::
 genName =
   -- TODO: should probably change this to `unicode` once hedgehog is updated
   -- (https://github.com/hedgehogqa/haskell-hedgehog/pull/303).
-  GH.mkName (undefined :: GH.Name a) <$> Gen.text (Range.linear 0 30) Gen.ascii
+  GH.mkName (undefined :: GH.Name a) <$> Gen.text (Range.linear 1 30) Gen.ascii
 
 genUTCTime
   :: MonadGen n

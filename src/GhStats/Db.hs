@@ -58,19 +58,19 @@ initDb =
     qRepos = fromString $ concat [
         "CREATE TABLE IF NOT EXISTS repos"
       , "( id INTEGER PRIMARY KEY"
-      , ", name TEXT"
-      , ", timestamp TEXT"
-      , ", stars INTEGER"
-      , ", forks INTEGER"
+      , ", name TEXT NOT NULL"
+      , ", timestamp TEXT NOT NULL"
+      , ", stars INTEGER NOT NULL"
+      , ", forks INTEGER NOT NULL"
       , ")"
       ]
     qReferrers = fromString $ concat [
         "CREATE TABLE IF NOT EXISTS referrers"
       , "( id INTEGER PRIMARY KEY"
-      , ", position INTEGER"
-      , ", name TEXT"
-      , ", count INTEGER"
-      , ", uniques INTEGER"
+      , ", position INTEGER NOT NULL"
+      , ", name TEXT NOT NULL"
+      , ", count INTEGER NOT NULL"
+      , ", uniques INTEGER NOT NULL"
       , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
       , ")"
       ]
@@ -119,7 +119,7 @@ selectRepoStats ::
   -> m (Maybe DbRepoStats)
 selectRepoStats (Id i) =
   let
-    q = "SELECT (id, name, timestamp, stars, forks) FROM repos WHERE id = ?"
+    q = "SELECT id, name, timestamp, stars, forks FROM repos WHERE id = ?"
     idT = T.pack . show $ i
   in
     withConnM $ \conn -> do
@@ -148,7 +148,7 @@ insertReferrers rsId refs = do
 
 data DbRepoStats =
   DbRepoStats {
-    _dbRepoStatsId        :: !(Maybe (Id DbReferrer))
+    _dbRepoStatsId        :: !(Maybe (Id DbRepoStats))
   , _dbRepoStatsName      :: !(Name Repo)
   , _dbRepoStatsTimestamp :: !UTCTime
   , _dbRepoStatsStars     :: !Stars
