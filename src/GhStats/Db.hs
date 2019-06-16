@@ -72,6 +72,8 @@ initDb =
       , ", count INTEGER NOT NULL"
       , ", uniques INTEGER NOT NULL"
       , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
+      , ", UNIQUE (position, repo_id)"
+      , ", UNIQUE (name, repo_id)"
       , ")"
       ]
   in
@@ -142,7 +144,7 @@ insertReferrers rsId refs = do
   let
     q =  "INSERT INTO referrers (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
     toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
-      DbReferrer (Id 0) i referrer referrerCount referrerUniques rsId
+      DbReferrer (Just (Id 0)) i referrer referrerCount referrerUniques rsId
   conn <- reader (view connection)
   liftIO . executeMany conn q . imap toDbReferrer . toList $ refs
 
@@ -175,7 +177,7 @@ toDbRepoStats RepoStats{_repoStatsName, _repoStatsTimestamp, _repoStatsStars, _r
 
 data DbReferrer =
   DbReferrer {
-    dbRefId       :: !(Id DbReferrer)
+    dbRefId       :: !(Maybe (Id DbReferrer))
   , dbRefPosition :: !Int
   , dbRefName     :: !(Name Referrer)
   , dbRefCount    :: !Int
