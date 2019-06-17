@@ -152,6 +152,28 @@ insertReferrerQ ::
 insertReferrerQ =
   "INSERT INTO referrers (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
 
+insertReferrer ::
+  DbConstraints e r m
+  => DbReferrer
+  -> m (Id DbReferrer)
+insertReferrer dbRef =
+  withConn $ \conn -> do
+    runDb $ execute conn insertReferrerQ dbRef
+    runDb . fmap Id $ lastInsertRowId conn
+
+selectReferrer ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => Id DbReferrer
+  -> m (Maybe DbReferrer)
+selectReferrer idee =
+  let
+    tnq = tableNameQ @DbReferrer
+    q = "SELECT id, position, name, count, uniques, repo_id FROM " <> tnq <> " WHERE id = ?"
+  in
+    selectById q idee
+
 class HasTable r where
   tableName :: Text
   tableNameQ :: Query
@@ -222,6 +244,13 @@ data DbReferrer =
 instance ToRow DbReferrer where
   toRow DbReferrer{..} =
     toRow (dbRefPosition, untagName dbRefName, dbRefCount, dbRefUniques, dbRefRepoId)
+
+instance FromRow DbReferrer where
+  fromRow =
+    let
+      nameField = mkName (Proxy :: Proxy Referrer) <$> field
+    in
+      DbReferrer <$> field <*> field <*> nameField <*> field <*> field <*> field
 
 withConn ::
   DbConstraints e r m
