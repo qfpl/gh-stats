@@ -20,13 +20,14 @@ import qualified Hedgehog.Range             as Range
 import           Test.Tasty                 (TestTree, testGroup)
 import           Test.Tasty.Hedgehog        (testProperty)
 
-import           GhStats.Db                 (DbReferrer (DbReferrer, dbRefId), DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                             Id (Id), initDb, insertReferrer,
+import           GhStats.Db                 (initDb, insertReferrer,
                                              insertRepoStats, selectReferrer,
                                              selectRepoStats)
+import           GhStats.Db.Types           (DbRepoStats (DbRepoStats, _dbRepoStatsId),
+                                             Id (Id), Pop (Pop, popId), Position (Position))
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
-                                             HasConnection, Stars (..),
-                                             runGhStatsM)
+                                             HasConnection, RepoStats,
+                                             Stars (..), runGhStatsM)
 
 import           GhStats.Test               (GhStatsPropertyT,
                                              runGhStatsPropertyT)
@@ -64,14 +65,14 @@ testReferrerRoundTrip ::
   Connection
   -> TestTree
 testReferrerRoundTrip conn =
-  testProperty "select . insert $ dbReferrer" . property . runGhStatsPropertyT conn $ do
+  testProperty "select . insert $ referrer" . property . runGhStatsPropertyT conn $ do
     drs <- forAllT genDbRepoStats
-    dr <- forAllT genDbReferrer
+    dr <- forAllT genPop
     drsId <- insertRepoStats drs
     drId <- insertReferrer dr
     let
       drWithId =
-        dr {dbRefId = Just drId}
+        dr {popId = Just drId}
     maybe failure (=== drWithId) =<< selectReferrer drId
 
 genDbRepoStats ::
@@ -127,13 +128,13 @@ genUTCTime =
   in
     UTCTime <$> gUTCTimeDay <*> gDiffTime
 
-genDbReferrer ::
+genPop ::
   MonadGen m
-  => m DbReferrer
-genDbReferrer =
-  DbReferrer
+  => m (Pop a)
+genPop =
+  Pop
   Nothing
-  <$> Gen.int (Range.linear 1 10)
+  <$> (Position <$> Gen.int (Range.linear 1 10))
   <*> genName
   <*> Gen.int (Range.linear 0 1000000)
   <*> Gen.int (Range.linear 0 1000000)

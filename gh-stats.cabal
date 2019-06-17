@@ -39,6 +39,7 @@ library
 
   exposed-modules:     GhStats
                      , GhStats.Db
+                     , GhStats.Db.Types
                      , GhStats.Main
                      , GhStats.Types
   hs-source-dirs:      src

@@ -1,50 +1,35 @@
-{-# LANGUAGE AllowAmbiguousTypes        #-}
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module GhStats.Db where
 
-import           Control.Lens                     (view, (^.))
-import           Control.Lens.Indexed             (FunctorWithIndex,
-                                                   TraversableWithIndex, imap)
-import           Control.Monad                    (void, (<=<))
-import           Control.Monad.Error.Lens         (throwing)
-import           Control.Monad.Except             (MonadError)
-import           Control.Monad.IO.Class           (MonadIO, liftIO)
-import           Control.Monad.Reader             (MonadReader, ask)
-import           Data.Foldable                    (Foldable, toList)
-import           Data.Int                         (Int64)
-import           Data.Proxy                       (Proxy (Proxy))
-import           Data.Text                        (Text)
-import qualified Data.Text                        as T
-import           Data.Time.Clock                  (UTCTime)
-import           Database.SQLite.Simple           (Connection, Only (Only),
-                                                   Query (Query), ToRow (toRow),
-                                                   execute, executeMany,
-                                                   execute_, field,
-                                                   lastInsertRowId, query)
-import           Database.SQLite.Simple.FromField (FromField)
-import           Database.SQLite.Simple.FromRow   (FromRow (fromRow))
-import           Database.SQLite.Simple.ToField   (ToField)
-import           Database.SQLite.SimpleErrors     (runDBAction)
-import           GitHub                           (Name, Repo, mkName,
-                                                   untagName)
-import           GitHub.Data.Traffic              (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
+import           Control.Lens                 (view, (^.))
+import           Control.Lens.Indexed         (FunctorWithIndex,
+                                               TraversableWithIndex, imap)
+import           Control.Monad                (void, (<=<))
+import           Control.Monad.Error.Lens     (throwing)
+import           Control.Monad.Except         (MonadError)
+import           Control.Monad.IO.Class       (MonadIO, liftIO)
+import           Control.Monad.Reader         (MonadReader, ask)
+import           Data.Foldable                (Foldable, toList)
+import qualified Data.Text                    as T
+import           Database.SQLite.Simple       (Connection, FromRow, Only (Only),
+                                               Query, ToRow, execute,
+                                               executeMany, execute_,
+                                               lastInsertRowId, query)
+import           Database.SQLite.SimpleErrors (runDBAction)
+import           GitHub.Data.Traffic          (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
 
-import           GhStats.Types                    (AsError (_TooManyResults), AsSQLiteResponse (_SQLiteResponse),
-                                                   Forks,
-                                                   HasConnection (connection),
-                                                   RepoStats (..), Stars,
-                                                   repoStatsPopularReferrers)
-
-newtype Id a = Id Int64
-  deriving (Eq, Show, FromField, ToField)
+import           GhStats.Db.Types
+import           GhStats.Types                (AsError (_TooManyResults), AsSQLiteResponse (_SQLiteResponse),
+                                               HasConnection (connection),
+                                               RepoStats (..),
+                                               repoStatsPopularReferrers)
 
 type DbConstraints e r m =
   ( MonadReader r m
@@ -60,7 +45,7 @@ initDb ::
 initDb =
   let
     qRepos = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbRepoStats, " "
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @RepoStats, " "
       , "( id INTEGER PRIMARY KEY"
       , ", name TEXT NOT NULL"
       , ", timestamp TEXT NOT NULL"
@@ -69,7 +54,7 @@ initDb =
       , ")"
       ]
     qReferrers = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbReferrer, " "
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @Referrer, " "
       , "( id INTEGER PRIMARY KEY"
       , ", position INTEGER NOT NULL"
       , ", name TEXT NOT NULL"
@@ -110,13 +95,35 @@ insertRepoStats ::
   DbConstraints e r m
   => DbRepoStats
   -> m (Id DbRepoStats)
-insertRepoStats drs =
+insertRepoStats =
   let
-    q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
+    tnq = tableNameQ @RepoStats
   in
-    withConn $ \conn -> do
-      runDb $ execute conn q drs
-      runDb . fmap Id $ lastInsertRowId conn
+    insert $
+      "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks) VALUES (?,?,?,?)"
+
+insertPath ::
+  DbConstraints e r m
+  => Pop PopularPath
+  -> m (Id PopularPath)
+insertPath =
+  let
+    tnq = tableNameQ @(Pop PopularPath)
+    q = "INSERT INTO " <> tnq <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
+  in
+    fmap fromPopId . insert q
+
+fromPopId ::
+  Id (Pop a)
+  -> Id a
+fromPopId (Id i) =
+  Id i
+
+toPopId ::
+  Id a
+  -> Id (Pop a)
+toPopId (Id i) =
+  Id i
 
 selectRepoStats ::
   ( DbConstraints e r m
@@ -124,12 +131,12 @@ selectRepoStats ::
   )
   => Id DbRepoStats
   -> m (Maybe DbRepoStats)
-selectRepoStats idee =
+selectRepoStats i =
   let
-    tnq = tableNameQ @DbRepoStats
+    tnq = tableNameQ @RepoStats
     q = "SELECT id, name, timestamp, stars, forks FROM " <> tnq <> " WHERE id = ?"
   in
-    selectById q idee
+    selectById q i
 
 insertReferrers ::
   ( DbConstraints e r m
@@ -143,48 +150,35 @@ insertReferrers ::
 insertReferrers rsId refs =
   let
     toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
-      DbReferrer (Just (Id 0)) i referrer referrerCount referrerUniques rsId
+      Pop (Just (Id 0)) i referrer referrerCount referrerUniques rsId
   in
     withConn $ \conn ->
-      liftIO . executeMany conn insertReferrerQ . imap toDbReferrer . toList $ refs
+      liftIO . executeMany conn insertReferrerQ . imap (toDbReferrer . Position) . toList $ refs
 
 insertReferrerQ ::
   Query
 insertReferrerQ =
-  "INSERT INTO referrers (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
+  "INSERT INTO " <> tableNameQ @Referrer <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
 
 insertReferrer ::
   DbConstraints e r m
-  => DbReferrer
-  -> m (Id DbReferrer)
-insertReferrer dbRef =
-  withConn $ \conn -> do
-    runDb $ execute conn insertReferrerQ dbRef
-    runDb . fmap Id $ lastInsertRowId conn
+  => Pop Referrer
+  -> m (Id Referrer)
+insertReferrer =
+  fmap fromPopId . insert insertReferrerQ
 
 selectReferrer ::
   ( DbConstraints e r m
   , AsError e
   )
-  => Id DbReferrer
-  -> m (Maybe DbReferrer)
+  => Id Referrer
+  -> m (Maybe (Pop Referrer))
 selectReferrer idee =
   let
-    tnq = tableNameQ @DbReferrer
+    tnq = tableNameQ @Referrer
     q = "SELECT id, position, name, count, uniques, repo_id FROM " <> tnq <> " WHERE id = ?"
   in
-    selectById q idee
-
-class HasTable r where
-  tableName :: Text
-  tableNameQ :: Query
-  tableNameQ = Query $ tableName @r
-
-instance HasTable DbRepoStats where
-  tableName = "repos"
-
-instance HasTable DbReferrer where
-  tableName = "referrers"
+    selectById q $ toPopId idee
 
 selectById ::
   forall e r m a.
@@ -205,54 +199,24 @@ selectById q idee =
         "Found multiple records in `" <> tableName @a <> "` with id " <> (T.pack . show $ idee)
       _ -> pure Nothing
 
-data DbRepoStats =
-  DbRepoStats {
-    _dbRepoStatsId        :: !(Maybe (Id DbRepoStats))
-  , _dbRepoStatsName      :: !(Name Repo)
-  , _dbRepoStatsTimestamp :: !UTCTime
-  , _dbRepoStatsStars     :: !Stars
-  , _dbRepoStatsForks     :: !Forks
-  }
-  deriving (Eq, Show)
-
-instance ToRow DbRepoStats where
-  toRow DbRepoStats {..} =
-    toRow (untagName _dbRepoStatsName, _dbRepoStatsTimestamp, _dbRepoStatsStars, _dbRepoStatsForks)
-
-instance FromRow DbRepoStats where
-  fromRow =
-    let
-      nameField = mkName (Proxy :: Proxy Repo) <$> field
-    in
-      DbRepoStats <$> field <*> nameField <*> field <*> field <*> field
-
 toDbRepoStats ::
   RepoStats
   -> DbRepoStats
 toDbRepoStats RepoStats{_repoStatsName, _repoStatsTimestamp, _repoStatsStars, _repoStatsForks} =
   DbRepoStats Nothing _repoStatsName _repoStatsTimestamp _repoStatsStars _repoStatsForks
 
-data DbReferrer =
-  DbReferrer {
-    dbRefId       :: !(Maybe (Id DbReferrer))
-  , dbRefPosition :: !Int
-  , dbRefName     :: !(Name Referrer)
-  , dbRefCount    :: !Int
-  , dbRefUniques  :: !Int
-  , dbRefRepoId   :: !(Id DbRepoStats)
-  }
-  deriving (Eq, Show)
+insert ::
+  ( DbConstraints e r m
+  , ToRow a
+  )
+  => Query
+  -> a
+  -> m (Id a)
+insert q a =
+  withConn $ \conn -> do
+    runDb $ execute conn q a
+    runDb . fmap Id $ lastInsertRowId conn
 
-instance ToRow DbReferrer where
-  toRow DbReferrer{..} =
-    toRow (dbRefPosition, untagName dbRefName, dbRefCount, dbRefUniques, dbRefRepoId)
-
-instance FromRow DbReferrer where
-  fromRow =
-    let
-      nameField = mkName (Proxy :: Proxy Referrer) <$> field
-    in
-      DbReferrer <$> field <*> field <*> nameField <*> field <*> field <*> field
 
 withConn ::
   DbConstraints e r m
