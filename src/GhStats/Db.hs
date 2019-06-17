@@ -1,9 +1,12 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module GhStats.Db where
 
@@ -18,12 +21,13 @@ import           Control.Monad.Reader             (MonadReader, ask)
 import           Data.Foldable                    (Foldable, toList)
 import           Data.Int                         (Int64)
 import           Data.Proxy                       (Proxy (Proxy))
-import           Data.String                      (fromString)
+import           Data.Text                        (Text)
 import qualified Data.Text                        as T
 import           Data.Time.Clock                  (UTCTime)
-import           Database.SQLite.Simple           (Connection, Only (Only), Query,
-                                                   ToRow (toRow), execute,
-                                                   executeMany, execute_, field,
+import           Database.SQLite.Simple           (Connection, Only (Only),
+                                                   Query (Query), ToRow (toRow),
+                                                   execute, executeMany,
+                                                   execute_, field,
                                                    lastInsertRowId, query)
 import           Database.SQLite.Simple.FromField (FromField)
 import           Database.SQLite.Simple.FromRow   (FromRow (fromRow))
@@ -55,8 +59,8 @@ initDb ::
   => m ()
 initDb =
   let
-    qRepos = fromString $ concat [
-        "CREATE TABLE IF NOT EXISTS repos"
+    qRepos = mconcat [
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbRepoStats
       , "( id INTEGER PRIMARY KEY"
       , ", name TEXT NOT NULL"
       , ", timestamp TEXT NOT NULL"
@@ -64,8 +68,8 @@ initDb =
       , ", forks INTEGER NOT NULL"
       , ")"
       ]
-    qReferrers = fromString $ concat [
-        "CREATE TABLE IF NOT EXISTS referrers"
+    qReferrers = mconcat [
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbReferrer
       , "( id INTEGER PRIMARY KEY"
       , ", position INTEGER NOT NULL"
       , ", name TEXT NOT NULL"
@@ -119,17 +123,12 @@ selectRepoStats ::
   )
   => Id DbRepoStats
   -> m (Maybe DbRepoStats)
-selectRepoStats (Id i) =
+selectRepoStats idee =
   let
-    q = "SELECT id, name, timestamp, stars, forks FROM repos WHERE id = ?"
-    idT = T.pack . show $ i
+    tnq = tableNameQ @DbRepoStats
+    q = "SELECT id, name, timestamp, stars, forks FROM " <> tnq <> " WHERE id = ?"
   in
-    withConn $ \conn -> do
-      drss <- runDb $ query conn q (Only i)
-      case drss of
-        [drs] -> pure $ Just drs
-        (_:_:_) -> throwing _TooManyResults $ "Found multiple records in `repos` with id " <> idT
-        _ -> pure Nothing
+    selectById q idee
 
 insertReferrers ::
   ( DbConstraints e r m
@@ -152,6 +151,36 @@ insertReferrerQ ::
   Query
 insertReferrerQ =
   "INSERT INTO referrers (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
+
+class HasTable r where
+  tableName :: Text
+  tableNameQ :: Query
+  tableNameQ = Query $ tableName @r
+
+instance HasTable DbRepoStats where
+  tableName = "repos"
+
+instance HasTable DbReferrer where
+  tableName = "referrers"
+
+selectById ::
+  forall e r m a.
+  ( DbConstraints e r m
+  , HasTable a
+  , FromRow a
+  , AsError e
+  )
+  => Query
+  -> Id a
+  -> m (Maybe a)
+selectById q idee =
+  withConn $ \conn -> do
+    rs <- runDb $ query conn q (Only idee)
+    case rs of
+      [r] -> pure $ Just r
+      (_:_:_) -> throwing _TooManyResults $
+        "Found multiple records in `" <> tableName @a <> "` with id " <> (T.pack . show $ idee)
+      _ -> pure Nothing
 
 data DbRepoStats =
   DbRepoStats {
