@@ -139,3 +139,17 @@ genPop =
   <*> Gen.int (Range.linear 0 1000000)
   <*> Gen.int (Range.linear 0 1000000)
   <*> genId
+
+-- genRepoStats ::
+--   MonadGen m
+--   => m RepoStats
+-- genRepoStats =
+--   RepoStats
+--   <$> genName
+--   <*> genUTCTime
+--   <*> genStars
+--   <*> genForks
+--   <*> genReferrers
+--   <*> genPaths
+--   <*> genViews
+--   <*> genClones

@@ -66,6 +66,19 @@ initDb =
       , ", UNIQUE (name, repo_id)"
       , ")"
       ]
+    qPaths = mconcat [
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @PopularPath, " "
+      , "( id INTEGER PRIMARY KEY"
+      , ", position INTEGER NOT NULL"
+      , ", path TEXT NOT NULL"
+      , ", count INTEGER NOT NULL"
+      , ", uniques INTEGER NOT NULL"
+      , ", repo_id INTEGER NOT NULL"
+      , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
+      , ", UNIQUE (position, repo_id)"
+      , ", UNIQUE (name, repo_id)"
+      , ")"
+      ]
   in
     withConn $ \conn -> liftIO $ do
       execute_ conn qRepos
