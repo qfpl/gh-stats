@@ -10,18 +10,18 @@ module GhStats.Db where
 import           Control.Lens                     (view, (^.))
 import           Control.Lens.Indexed             (FunctorWithIndex,
                                                    TraversableWithIndex, imap)
-import           Control.Monad                    (join, void, (<=<))
+import           Control.Monad                    (void, (<=<))
 import           Control.Monad.Error.Lens         (throwing)
 import           Control.Monad.Except             (MonadError)
 import           Control.Monad.IO.Class           (MonadIO, liftIO)
-import           Control.Monad.Reader             (MonadReader, reader)
+import           Control.Monad.Reader             (MonadReader, ask)
 import           Data.Foldable                    (Foldable, toList)
 import           Data.Int                         (Int64)
 import           Data.Proxy                       (Proxy (Proxy))
 import           Data.String                      (fromString)
 import qualified Data.Text                        as T
 import           Data.Time.Clock                  (UTCTime)
-import           Database.SQLite.Simple           (Connection, Only (Only),
+import           Database.SQLite.Simple           (Connection, Only (Only), Query,
                                                    ToRow (toRow), execute,
                                                    executeMany, execute_, field,
                                                    lastInsertRowId, query)
@@ -77,7 +77,7 @@ initDb =
       , ")"
       ]
   in
-    withConn $ \conn -> do
+    withConn $ \conn -> liftIO $ do
       execute_ conn qRepos
       execute_ conn qReferrers
 
@@ -109,7 +109,7 @@ insertRepoStats drs =
   let
     q = "INSERT INTO repos (name, timestamp, stars, forks) VALUES (?,?,?,?)"
   in
-    withConnM $ \conn -> do
+    withConn $ \conn -> do
       runDb $ execute conn q drs
       runDb . fmap Id $ lastInsertRowId conn
 
@@ -124,7 +124,7 @@ selectRepoStats (Id i) =
     q = "SELECT id, name, timestamp, stars, forks FROM repos WHERE id = ?"
     idT = T.pack . show $ i
   in
-    withConnM $ \conn -> do
+    withConn $ \conn -> do
       drss <- runDb $ query conn q (Only i)
       case drss of
         [drs] -> pure $ Just drs
@@ -140,13 +140,18 @@ insertReferrers ::
   => Id DbRepoStats
   -> t Referrer
   -> m ()
-insertReferrers rsId refs = do
+insertReferrers rsId refs =
   let
-    q =  "INSERT INTO referrers (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
     toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
       DbReferrer (Just (Id 0)) i referrer referrerCount referrerUniques rsId
-  conn <- reader (view connection)
-  liftIO . executeMany conn q . imap toDbReferrer . toList $ refs
+  in
+    withConn $ \conn ->
+      liftIO . executeMany conn insertReferrerQ . imap toDbReferrer . toList $ refs
+
+insertReferrerQ ::
+  Query
+insertReferrerQ =
+  "INSERT INTO referrers (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
 
 data DbRepoStats =
   DbRepoStats {
@@ -191,17 +196,10 @@ instance ToRow DbReferrer where
 
 withConn ::
   DbConstraints e r m
-  => (Connection -> IO a)
-  -> m a
-withConn f =
-    join $ reader (runDb . f . view connection)
-
-withConnM ::
-  DbConstraints e r m
   => (Connection -> m a)
   -> m a
-withConnM f =
-    join $ reader (f . view connection)
+withConn f =
+  (f . view connection) =<< ask
 
 runDb ::
   ( MonadError e m
