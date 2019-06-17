@@ -60,7 +60,7 @@ initDb ::
 initDb =
   let
     qRepos = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbRepoStats
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbRepoStats, " "
       , "( id INTEGER PRIMARY KEY"
       , ", name TEXT NOT NULL"
       , ", timestamp TEXT NOT NULL"
@@ -69,12 +69,13 @@ initDb =
       , ")"
       ]
     qReferrers = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbReferrer
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbReferrer, " "
       , "( id INTEGER PRIMARY KEY"
       , ", position INTEGER NOT NULL"
       , ", name TEXT NOT NULL"
       , ", count INTEGER NOT NULL"
       , ", uniques INTEGER NOT NULL"
+      , ", repo_id INTEGER NOT NULL"
       , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
       , ", UNIQUE (position, repo_id)"
       , ", UNIQUE (name, repo_id)"
@@ -240,6 +241,7 @@ data DbReferrer =
   , dbRefUniques  :: !Int
   , dbRefRepoId   :: !(Id DbRepoStats)
   }
+  deriving (Eq, Show)
 
 instance ToRow DbReferrer where
   toRow DbReferrer{..} =

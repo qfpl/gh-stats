@@ -6,25 +6,30 @@ import           Control.Monad              (void, (<=<))
 import           Control.Monad.Except       (MonadError)
 import           Control.Monad.IO.Class     (MonadIO)
 import           Control.Monad.Reader       (MonadReader)
-import Data.Maybe (fromJust)
+import           Data.Maybe                 (fromJust)
 import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
                                              secondsToDiffTime)
 import           Database.SQLite.Simple     (Connection)
 import qualified GitHub                     as GH
 
-import           Hedgehog                   (MonadGen, forAll, property, tripping, failure, (===))
+import           Hedgehog                   (MonadGen, failure, forAll,
+                                             property, tripping, (===))
 import qualified Hedgehog.Gen               as Gen
 import           Hedgehog.Internal.Property (forAllT)
 import qualified Hedgehog.Range             as Range
 import           Test.Tasty                 (TestTree, testGroup)
 import           Test.Tasty.Hedgehog        (testProperty)
 
-import           GhStats.Db                 (DbRepoStats (DbRepoStats, _dbRepoStatsId), Id (Id),
-                                             initDb, insertRepoStats, selectRepoStats)
+import           GhStats.Db                 (DbReferrer (DbReferrer, dbRefId), DbRepoStats (DbRepoStats, _dbRepoStatsId),
+                                             Id (Id), initDb, insertReferrer,
+                                             insertRepoStats, selectReferrer,
+                                             selectRepoStats)
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
-                                             HasConnection, Stars (..), runGhStatsM)
+                                             HasConnection, Stars (..),
+                                             runGhStatsM)
 
-import           GhStats.Test               (runGhStatsPropertyT, GhStatsPropertyT)
+import           GhStats.Test               (GhStatsPropertyT,
+                                             runGhStatsPropertyT)
 
 type TestConstraints e r m = (
     MonadError e m
@@ -38,21 +43,36 @@ type TestConstraints e r m = (
 testDb ::
   Connection
   -> TestTree
-testDb conn = testGroup "GhStats.Db" [
-    testRepoStatsRoundTrip conn
+testDb conn = testGroup "GhStats.Db" . fmap ($ conn) $ [
+    testRepoStatsRoundTrip
+  , testReferrerRoundTrip
   ]
 
 testRepoStatsRoundTrip ::
   Connection
   -> TestTree
 testRepoStatsRoundTrip conn =
-  testProperty "select . insert" . property . runGhStatsPropertyT conn $ do
+  testProperty "select . insert $ dbRepoStats" . property . runGhStatsPropertyT conn $ do
     drs <- forAllT genDbRepoStats
     drsId <- insertRepoStats drs
     let
       drsWithId =
         drs {_dbRepoStatsId = Just drsId}
     maybe failure (=== drsWithId) =<< selectRepoStats drsId
+
+testReferrerRoundTrip ::
+  Connection
+  -> TestTree
+testReferrerRoundTrip conn =
+  testProperty "select . insert $ dbReferrer" . property . runGhStatsPropertyT conn $ do
+    drs <- forAllT genDbRepoStats
+    dr <- forAllT genDbReferrer
+    drsId <- insertRepoStats drs
+    drId <- insertReferrer dr
+    let
+      drWithId =
+        dr {dbRefId = Just drId}
+    maybe failure (=== drWithId) =<< selectReferrer drId
 
 genDbRepoStats ::
    MonadGen m
@@ -106,3 +126,15 @@ genUTCTime =
     gDiffTime = secondsToDiffTime . fromIntegral <$> gSeconds
   in
     UTCTime <$> gUTCTimeDay <*> gDiffTime
+
+genDbReferrer ::
+  MonadGen m
+  => m DbReferrer
+genDbReferrer =
+  DbReferrer
+  Nothing
+  <$> Gen.int (Range.linear 1 10)
+  <*> genName
+  <*> Gen.int (Range.linear 0 1000000)
+  <*> Gen.int (Range.linear 0 1000000)
+  <*> genId
