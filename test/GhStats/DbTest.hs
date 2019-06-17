@@ -12,7 +12,7 @@ import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
 import           Database.SQLite.Simple     (Connection)
 import qualified GitHub                     as GH
 
-import           Hedgehog                   (MonadGen, failure, forAll,
+import           Hedgehog                   (MonadGen, failure, forAll, GenT, 
                                              property, tripping, (===))
 import qualified Hedgehog.Gen               as Gen
 import           Hedgehog.Internal.Property (forAllT)
@@ -74,6 +74,24 @@ testReferrerRoundTrip conn =
       drWithId =
         dr {popId = Just drId}
     maybe failure (=== drWithId) =<< selectReferrer drId
+
+testPopRoundTrip ::
+  TestConstraints e r m
+  => GenT (GhStatsPropertyT) a
+  -> (a -> m (Id a))
+  -> (Id a -> m a)
+  -> Connection
+  -> TestTree
+testPopRoundTrip gen insert select conn =
+  testProperty "select . insert $ pop" . property . runGhStatsPropertyT conn $ do
+    drs <- forAllT genDbRepoStats
+    pop <- forAllT gen
+    drsId <- insertRepoStats drs
+    popId' <- insert pop
+    let
+      popWithId =
+        pop {popId = Just popId'}
+    maybe failure (=== popWithId) =<< select popId'
 
 genDbRepoStats ::
    MonadGen m

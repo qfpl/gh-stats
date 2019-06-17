@@ -121,7 +121,7 @@ insertPath ::
   -> m (Id PopularPath)
 insertPath =
   let
-    tnq = tableNameQ @(Pop PopularPath)
+    tnq = tableNameQ @PopularPath
     q = "INSERT INTO " <> tnq <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
   in
     fmap fromPopId . insert q
