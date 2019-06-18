@@ -230,7 +230,6 @@ insert q a =
     runDb $ execute conn q a
     runDb . fmap Id $ lastInsertRowId conn
 
-
 withConn ::
   DbConstraints e r m
   => (Connection -> m a)

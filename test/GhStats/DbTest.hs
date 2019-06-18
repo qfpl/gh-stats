@@ -12,7 +12,7 @@ import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
 import           Database.SQLite.Simple     (Connection)
 import qualified GitHub                     as GH
 
-import           Hedgehog                   (MonadGen, failure, forAll, GenT, 
+import           Hedgehog                   (MonadGen, failure, forAll, GenT, Property,
                                              property, tripping, (===))
 import qualified Hedgehog.Gen               as Gen
 import           Hedgehog.Internal.Property (forAllT)
@@ -29,7 +29,7 @@ import           GhStats.Types              (AsSQLiteResponse, Forks (..),
                                              HasConnection, RepoStats,
                                              Stars (..), runGhStatsM)
 
-import           GhStats.Test               (GhStatsPropertyT,
+import           GhStats.Test               (GhStatsPropertyT, GhStatsPropReaderT,
                                              runGhStatsPropertyT)
 
 type TestConstraints e r m = (
@@ -64,28 +64,24 @@ testRepoStatsRoundTrip conn =
 testReferrerRoundTrip ::
   Connection
   -> TestTree
-testReferrerRoundTrip conn =
-  testProperty "select . insert $ referrer" . property . runGhStatsPropertyT conn $ do
-    drs <- forAllT genDbRepoStats
-    dr <- forAllT genPop
-    drsId <- insertRepoStats drs
-    drId <- insertReferrer dr
-    let
-      drWithId =
-        dr {popId = Just drId}
-    maybe failure (=== drWithId) =<< selectReferrer drId
+testReferrerRoundTrip =
+  testProperty "select . insert $ referrer" . popRoundTrip insertReferrer selectReferrer
 
-testPopRoundTrip ::
-  TestConstraints e r m
-  => GenT (GhStatsPropertyT) a
-  -> (a -> m (Id a))
-  -> (Id a -> m a)
+-- testPathRoundTrip ::
+--   Connection
+--   -> TestTree
+-- testPathRoundTrip =
+--   testProperty "select . insert $ path" . popRoundTrip insertPath selectPath
+
+popRoundTrip ::
+  (Pop a -> GhStatsPropertyT (Id a))
+  -> (Id a -> GhStatsPropertyT (Maybe (Pop a)))
   -> Connection
-  -> TestTree
-testPopRoundTrip gen insert select conn =
-  testProperty "select . insert $ pop" . property . runGhStatsPropertyT conn $ do
+  -> Property
+popRoundTrip insert select conn =
+  property . runGhStatsPropertyT conn $ do
     drs <- forAllT genDbRepoStats
-    pop <- forAllT gen
+    pop <- forAllT genPop
     drsId <- insertRepoStats drs
     popId' <- insert pop
     let
