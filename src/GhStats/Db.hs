@@ -115,17 +115,6 @@ insertRepoStats =
     insert $
       "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks) VALUES (?,?,?,?)"
 
-insertPath ::
-  DbConstraints e r m
-  => Pop PopularPath
-  -> m (Id PopularPath)
-insertPath =
-  let
-    tnq = tableNameQ @PopularPath
-    q = "INSERT INTO " <> tnq <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
-  in
-    fmap fromPopId . insert q
-
 fromPopId ::
   Id (Pop a)
   -> Id a
@@ -166,19 +155,20 @@ insertReferrers rsId refs =
       Pop (Just (Id 0)) i referrer referrerCount referrerUniques rsId
   in
     withConn $ \conn ->
-      liftIO . executeMany conn insertReferrerQ . imap (toDbReferrer . Position) . toList $ refs
+      liftIO . executeMany conn (insertPopQ $ tableNameQ @Referrer) . imap (toDbReferrer . Position) . toList $ refs
 
-insertReferrerQ ::
+insertPopQ ::
   Query
-insertReferrerQ =
-  "INSERT INTO " <> tableNameQ @Referrer <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
+  -> Query
+insertPopQ tn =
+  "INSERT INTO " <> tn <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
 
 insertReferrer ::
   DbConstraints e r m
   => Pop Referrer
   -> m (Id Referrer)
 insertReferrer =
-  fmap fromPopId . insert insertReferrerQ
+  fmap fromPopId . insert (insertPopQ $ tableNameQ @Referrer)
 
 selectReferrer ::
   ( DbConstraints e r m
@@ -192,6 +182,13 @@ selectReferrer idee =
     q = "SELECT id, position, name, count, uniques, repo_id FROM " <> tnq <> " WHERE id = ?"
   in
     selectById q $ toPopId idee
+
+insertPath ::
+  DbConstraints e r m
+  => Pop PopularPath
+  -> m (Id PopularPath)
+insertPath =
+  fmap fromPopId . insert (insertPopQ $ tableNameQ @PopularPath)
 
 selectById ::
   forall e r m a.
