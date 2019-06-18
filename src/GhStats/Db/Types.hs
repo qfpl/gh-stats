@@ -74,8 +74,8 @@ data Pop a =
     popId       :: !(Maybe (Id a))
   , popPosition :: !(Position a)
   , popName     :: !(Name a)
-  , popCount    :: !Int
-  , popUniques  :: !Int
+  , popCount    :: !(Count a)
+  , popUniques  :: !(Uniques a)
   , popRepoId   :: !(Id DbRepoStats)
   }
   deriving (Eq, Show)

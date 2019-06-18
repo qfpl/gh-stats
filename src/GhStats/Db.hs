@@ -53,8 +53,8 @@ initDb =
       , ", forks INTEGER NOT NULL"
       , ")"
       ]
-    qReferrers = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @Referrer, " "
+    qPop tn = mconcat [
+        "CREATE TABLE IF NOT EXISTS ", tn, " "
       , "( id INTEGER PRIMARY KEY"
       , ", position INTEGER NOT NULL"
       , ", name TEXT NOT NULL"
@@ -66,23 +66,13 @@ initDb =
       , ", UNIQUE (name, repo_id)"
       , ")"
       ]
-    qPaths = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @PopularPath, " "
-      , "( id INTEGER PRIMARY KEY"
-      , ", position INTEGER NOT NULL"
-      , ", path TEXT NOT NULL"
-      , ", count INTEGER NOT NULL"
-      , ", uniques INTEGER NOT NULL"
-      , ", repo_id INTEGER NOT NULL"
-      , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
-      , ", UNIQUE (position, repo_id)"
-      , ", UNIQUE (name, repo_id)"
-      , ")"
-      ]
+    qReferrer = qPop $ tableNameQ @Referrer
+    qPaths = qPop $ tableNameQ @PopularPath
   in
     withConn $ \conn -> liftIO $ do
       execute_ conn qRepos
-      execute_ conn qReferrers
+      execute_ conn qReferrer
+      execute_ conn qPaths
 
 
 addToDb ::
@@ -152,7 +142,7 @@ insertReferrers ::
 insertReferrers rsId refs =
   let
     toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
-      Pop (Just (Id 0)) i referrer referrerCount referrerUniques rsId
+      Pop (Just (Id 0)) i referrer (Count referrerCount) (Uniques referrerUniques) rsId
   in
     withConn $ \conn ->
       liftIO . executeMany conn (insertPopQ $ tableNameQ @Referrer) . imap (toDbReferrer . Position) . toList $ refs
@@ -163,32 +153,32 @@ insertPopQ ::
 insertPopQ tn =
   "INSERT INTO " <> tn <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
 
-insertReferrer ::
-  DbConstraints e r m
-  => Pop Referrer
-  -> m (Id Referrer)
-insertReferrer =
-  fmap fromPopId . insert (insertPopQ $ tableNameQ @Referrer)
+selectPopQ ::
+  Query
+  -> Query
+selectPopQ tn =
+  "SELECT id, position, name, count, uniques, repo_id FROM " <> tn <> " WHERE id = ?"
 
-selectReferrer ::
+insertPop ::
+  forall a e r m.
+  ( DbConstraints e r m
+  , HasTable a
+  )
+  => Pop a
+  -> m (Id a)
+insertPop =
+  fmap fromPopId . insert (insertPopQ $ tableNameQ @a)
+
+selectPop ::
+  forall e r m a.
   ( DbConstraints e r m
   , AsError e
+  , HasTable a
   )
-  => Id Referrer
-  -> m (Maybe (Pop Referrer))
-selectReferrer idee =
-  let
-    tnq = tableNameQ @Referrer
-    q = "SELECT id, position, name, count, uniques, repo_id FROM " <> tnq <> " WHERE id = ?"
-  in
-    selectById q $ toPopId idee
-
-insertPath ::
-  DbConstraints e r m
-  => Pop PopularPath
-  -> m (Id PopularPath)
-insertPath =
-  fmap fromPopId . insert (insertPopQ $ tableNameQ @PopularPath)
+  => Id a
+  -> m (Maybe (Pop a))
+selectPop idee =
+  selectById (selectPopQ $ tableNameQ @a) $ toPopId idee
 
 selectById ::
   forall e r m a.

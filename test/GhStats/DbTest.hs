@@ -1,4 +1,6 @@
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module GhStats.DbTest where
 
@@ -7,29 +9,32 @@ import           Control.Monad.Except       (MonadError)
 import           Control.Monad.IO.Class     (MonadIO)
 import           Control.Monad.Reader       (MonadReader)
 import           Data.Maybe                 (fromJust)
+import           Data.Proxy                 (Proxy (Proxy))
 import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
                                              secondsToDiffTime)
 import           Database.SQLite.Simple     (Connection)
 import qualified GitHub                     as GH
 
-import           Hedgehog                   (MonadGen, failure, forAll, GenT, Property,
-                                             property, tripping, (===))
+import           Hedgehog                   (GenT, MonadGen, Property, failure,
+                                             forAll, property, tripping, (===))
 import qualified Hedgehog.Gen               as Gen
 import           Hedgehog.Internal.Property (forAllT)
 import qualified Hedgehog.Range             as Range
 import           Test.Tasty                 (TestTree, testGroup)
 import           Test.Tasty.Hedgehog        (testProperty)
 
-import           GhStats.Db                 (initDb, insertReferrer,
-                                             insertRepoStats, selectReferrer,
-                                             selectRepoStats)
+import           GhStats.Db                 (initDb, insertPop, insertRepoStats,
+                                             selectPop, selectRepoStats)
 import           GhStats.Db.Types           (DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                             Id (Id), Pop (Pop, popId), Position (Position))
+                                             HasTable, Id (Id),
+                                             Pop (Pop, popId),
+                                             Position (Position), Count (Count), Uniques (Uniques))
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
                                              HasConnection, RepoStats,
                                              Stars (..), runGhStatsM)
 
-import           GhStats.Test               (GhStatsPropertyT, GhStatsPropReaderT,
+import           GhStats.Test               (GhStatsPropReaderT,
+                                             GhStatsPropertyT,
                                              runGhStatsPropertyT)
 
 type TestConstraints e r m = (
@@ -65,29 +70,30 @@ testReferrerRoundTrip ::
   Connection
   -> TestTree
 testReferrerRoundTrip =
-  testProperty "select . insert $ referrer" . popRoundTrip insertReferrer selectReferrer
+  testProperty "select . insert $ referrer" . popRoundTrip (Proxy :: Proxy GH.Referrer)
 
--- testPathRoundTrip ::
---   Connection
---   -> TestTree
--- testPathRoundTrip =
---   testProperty "select . insert $ path" . popRoundTrip insertPath selectPath
+testPathRoundTrip ::
+  Connection
+  -> TestTree
+testPathRoundTrip =
+  testProperty "select . insert $ path" . popRoundTrip (Proxy :: Proxy GH.PopularPath)
 
 popRoundTrip ::
-  (Pop a -> GhStatsPropertyT (Id a))
-  -> (Id a -> GhStatsPropertyT (Maybe (Pop a)))
+  forall a.
+  HasTable a
+  => Proxy a
   -> Connection
   -> Property
-popRoundTrip insert select conn =
+popRoundTrip _ conn =
   property . runGhStatsPropertyT conn $ do
     drs <- forAllT genDbRepoStats
     pop <- forAllT genPop
     drsId <- insertRepoStats drs
-    popId' <- insert pop
+    popId' <- insertPop @a pop
     let
       popWithId =
         pop {popId = Just popId'}
-    maybe failure (=== popWithId) =<< select popId'
+    maybe failure (=== popWithId) =<< selectPop popId'
 
 genDbRepoStats ::
    MonadGen m
@@ -150,9 +156,21 @@ genPop =
   Nothing
   <$> (Position <$> Gen.int (Range.linear 1 10))
   <*> genName
-  <*> Gen.int (Range.linear 0 1000000)
-  <*> Gen.int (Range.linear 0 1000000)
+  <*> genCount
+  <*> genUniques
   <*> genId
+
+genCount ::
+  MonadGen m
+  => m (Count a)
+genCount =
+  Count <$> Gen.int (Range.linear 0 1000000)
+
+genUniques ::
+  MonadGen m
+  => m (Uniques a)
+genUniques =
+  Uniques <$> Gen.int (Range.linear 0 1000000)
 
 -- genRepoStats ::
 --   MonadGen m
