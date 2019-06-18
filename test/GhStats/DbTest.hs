@@ -10,6 +10,7 @@ import           Control.Monad.IO.Class     (MonadIO)
 import           Control.Monad.Reader       (MonadReader)
 import           Data.Maybe                 (fromJust)
 import           Data.Proxy                 (Proxy (Proxy))
+import Data.Text (Text)
 import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
                                              secondsToDiffTime)
 import           Database.SQLite.Simple     (Connection)
@@ -77,6 +78,20 @@ testPathRoundTrip ::
   -> TestTree
 testPathRoundTrip =
   testProperty "select . insert $ path" . popRoundTrip (Proxy :: Proxy GH.PopularPath)
+
+testReferrersRoundTrip ::
+  Connection
+  -> TestTree
+testReferrersRoundTrip =
+  testProperty "select . insert $ referrers" . property . runGhStatsPropertyT conn $ do
+
+ghStatsProp ::
+  Text
+  -> Connection
+  -> PropertyT IO ()
+  -> TestTree
+ghStatsProp propName conn =
+  testProperty propName . property . runGhStatsPropertyT conn
 
 popRoundTrip ::
   forall a.
