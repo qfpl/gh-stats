@@ -140,12 +140,31 @@ insertReferrers ::
   -> t Referrer
   -> m ()
 insertReferrers rsId refs =
+  withConn $ \conn ->
+    liftIO . executeMany conn (insertPopQ $ tableNameQ @Referrer) . toDbReferrers rsId $ refs
+
+toDbReferrers ::
+  ( Foldable t
+  , FunctorWithIndex Int t
+  , TraversableWithIndex Int t
+  )
+  => Id DbRepoStats
+  -> t Referrer
+  -> [Pop Referrer]
+toDbReferrers rsId =
   let
     toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
-      Pop (Just (Id 0)) i referrer (Count referrerCount) (Uniques referrerUniques) rsId
+      Pop Nothing i referrer (Count referrerCount) (Uniques referrerUniques) rsId
   in
-    withConn $ \conn ->
-      liftIO . executeMany conn (insertPopQ $ tableNameQ @Referrer) . imap (toDbReferrer . Position) . toList $ refs
+    imap (toDbReferrer . Position) . toList
+
+selectReferrersForRepoStats ::
+  DbConstraints e r m
+  => Id DbRepoStats
+  -> m [Pop Referrer]
+selectReferrersForRepoStats i =
+  withConn $ \conn ->
+    runDb $ query conn (selectPopQ @Referrer <> " WHERE repo_id = ? ORDER BY position") (Only i)
 
 insertPopQ ::
   Query
@@ -153,11 +172,19 @@ insertPopQ ::
 insertPopQ tn =
   "INSERT INTO " <> tn <> " (position, name, count, uniques, repo_id) VALUES (?,?,?,?,?)"
 
+selectPopByIdQ ::
+  forall a.
+  HasTable a
+  => Query
+selectPopByIdQ =
+  selectPopQ @a <> " WHERE id = ?"
+
 selectPopQ ::
-  Query
-  -> Query
-selectPopQ tn =
-  "SELECT id, position, name, count, uniques, repo_id FROM " <> tn <> " WHERE id = ?"
+  forall a.
+  HasTable a
+  => Query
+selectPopQ =
+  "SELECT id, position, name, count, uniques, repo_id FROM " <> tableNameQ @a
 
 insertPop ::
   forall a e r m.
@@ -178,7 +205,7 @@ selectPop ::
   => Id a
   -> m (Maybe (Pop a))
 selectPop idee =
-  selectById (selectPopQ $ tableNameQ @a) $ toPopId idee
+  selectById (selectPopByIdQ @a) $ toPopId idee
 
 selectById ::
   forall e r m a.

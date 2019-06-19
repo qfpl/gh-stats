@@ -4,32 +4,38 @@
 
 module GhStats.DbTest where
 
-import           Control.Monad              (void, (<=<))
+import           Control.Monad              (void, (<=<), zipWithM_)
 import           Control.Monad.Except       (MonadError)
 import           Control.Monad.IO.Class     (MonadIO)
 import           Control.Monad.Reader       (MonadReader)
+import           Data.List                  (nub)
+import qualified Data.Map as M
 import           Data.Maybe                 (fromJust)
 import           Data.Proxy                 (Proxy (Proxy))
-import Data.Text (Text)
+import           Data.Text                  (Text)
 import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
                                              secondsToDiffTime)
 import           Database.SQLite.Simple     (Connection)
 import qualified GitHub                     as GH
 
-import           Hedgehog                   (GenT, MonadGen, Property, failure,
-                                             forAll, property, tripping, (===))
+import           Hedgehog                   (GenT, MonadGen, Property,
+                                             PropertyT, failure, forAll,
+                                             property, tripping, (===))
 import qualified Hedgehog.Gen               as Gen
 import           Hedgehog.Internal.Property (forAllT)
 import qualified Hedgehog.Range             as Range
-import           Test.Tasty                 (TestTree, testGroup)
+import           Test.Tasty                 (TestName, TestTree, testGroup)
 import           Test.Tasty.Hedgehog        (testProperty)
 
-import           GhStats.Db                 (initDb, insertPop, insertRepoStats,
-                                             selectPop, selectRepoStats)
-import           GhStats.Db.Types           (DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                             HasTable, Id (Id),
+import           GhStats.Db                 (initDb, insertPop, insertReferrers,
+                                             insertRepoStats, selectPop,
+                                             selectReferrersForRepoStats,
+                                             selectRepoStats, toDbReferrers)
+import           GhStats.Db.Types           (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
+                                             HasTable (tableName), Id (Id),
                                              Pop (Pop, popId),
-                                             Position (Position), Count (Count), Uniques (Uniques))
+                                             Position (Position),
+                                             Uniques (Uniques))
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
                                              HasConnection, RepoStats,
                                              Stars (..), runGhStatsM)
@@ -53,13 +59,15 @@ testDb ::
 testDb conn = testGroup "GhStats.Db" . fmap ($ conn) $ [
     testRepoStatsRoundTrip
   , testReferrerRoundTrip
+  , testPathRoundTrip
+  , testReferrersRoundTrip
   ]
 
 testRepoStatsRoundTrip ::
   Connection
   -> TestTree
 testRepoStatsRoundTrip conn =
-  testProperty "select . insert $ dbRepoStats" . property . runGhStatsPropertyT conn $ do
+  ghStatsProp "DbRepoStats round trip" conn $ do
     drs <- forAllT genDbRepoStats
     drsId <- insertRepoStats drs
     let
@@ -71,24 +79,39 @@ testReferrerRoundTrip ::
   Connection
   -> TestTree
 testReferrerRoundTrip =
-  testProperty "select . insert $ referrer" . popRoundTrip (Proxy :: Proxy GH.Referrer)
+  popRoundTrip (Proxy :: Proxy GH.Referrer)
 
 testPathRoundTrip ::
   Connection
   -> TestTree
 testPathRoundTrip =
-  testProperty "select . insert $ path" . popRoundTrip (Proxy :: Proxy GH.PopularPath)
+  popRoundTrip (Proxy :: Proxy GH.PopularPath)
 
 testReferrersRoundTrip ::
   Connection
   -> TestTree
-testReferrersRoundTrip =
-  testProperty "select . insert $ referrers" . property . runGhStatsPropertyT conn $ do
+testReferrersRoundTrip conn =
+  ghStatsProp "referrers round trip" conn $ do
+    drs <- forAllT genDbRepoStats
+    refs <- forAllT genReferrers
+    drsId <- insertRepoStats drs
+    let
+      dbRefsExpected = toDbReferrers drsId refs
+    insertReferrers drsId refs
+    dbRefsActual <- selectReferrersForRepoStats drsId
+    dbReferrersEqual dbRefsExpected dbRefsActual
+
+dbReferrersEqual ::
+  [Pop GH.Referrer]
+  -> [Pop GH.Referrer]
+  -> GhStatsPropertyT ()
+dbReferrersEqual =
+  zipWithM_ (\e a -> e === (a {popId = Nothing}))
 
 ghStatsProp ::
-  Text
+  TestName
   -> Connection
-  -> PropertyT IO ()
+  -> GhStatsPropertyT ()
   -> TestTree
 ghStatsProp propName conn =
   testProperty propName . property . runGhStatsPropertyT conn
@@ -98,17 +121,20 @@ popRoundTrip ::
   HasTable a
   => Proxy a
   -> Connection
-  -> Property
+  -> TestTree
 popRoundTrip _ conn =
-  property . runGhStatsPropertyT conn $ do
-    drs <- forAllT genDbRepoStats
-    pop <- forAllT genPop
-    drsId <- insertRepoStats drs
-    popId' <- insertPop @a pop
-    let
-      popWithId =
-        pop {popId = Just popId'}
-    maybe failure (=== popWithId) =<< selectPop popId'
+  let
+    testName = show (tableName @a) <> " round trip"
+  in
+    ghStatsProp testName conn $ do
+      drs <- forAllT genDbRepoStats
+      pop <- forAllT genPop
+      drsId <- insertRepoStats drs
+      popId' <- insertPop @a pop
+      let
+        popWithId =
+          pop {popId = Just popId'}
+      maybe failure (=== popWithId) =<< selectPop popId'
 
 genDbRepoStats ::
    MonadGen m
@@ -162,6 +188,22 @@ genUTCTime =
     gDiffTime = secondsToDiffTime . fromIntegral <$> gSeconds
   in
     UTCTime <$> gUTCTimeDay <*> gDiffTime
+
+genReferrer ::
+  MonadGen m
+  => m GH.Referrer
+genReferrer =
+  let
+    genIntCount = Gen.int (Range.linear 0 1000000)
+  in
+    GH.Referrer <$> genName <*> genIntCount <*> genIntCount
+
+-- List of referrers with unique names
+genReferrers ::
+  MonadGen m
+  => m [GH.Referrer]
+genReferrers =
+  M.elems <$> Gen.map (Range.constant 0 15) ((\r -> (GH.referrer r, r)) <$> genReferrer)
 
 genPop ::
   MonadGen m

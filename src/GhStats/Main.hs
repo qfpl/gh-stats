@@ -2,15 +2,14 @@
 
 module GhStats.Main where
 
-import           Control.Exception.Lens (throwing)
 import           Control.Monad          ((<=<))
-import           Control.Monad.Except   (ExceptT, MonadError, runExceptT)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad.Reader   (runReaderT, ReaderT)
+import           Control.Monad.Except   (ExceptT, runExceptT)
+import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad.Reader   (runReaderT)
 import qualified Data.ByteString.Lazy   as LBS
 import           Data.Foldable          (toList)
 import           Data.Sv                (defaultEncodeOptions, encodeNamed)
-import           Database.SQLite.Simple (open, Connection)
+import           Database.SQLite.Simple (open)
 import qualified GitHub                 as GH
 import           Options.Applicative    (Parser, command, execParser, fullDesc,
                                          header, help, helper, info, long,
@@ -18,9 +17,8 @@ import           Options.Applicative    (Parser, command, execParser, fullDesc,
                                          subparser, (<**>))
 
 import           GhStats                (getHighLevelOrgStats, getOrgStats)
-import           GhStats.Db             (addToDb, initDb, runDb)
-import           GhStats.Types          (AsGhError, Error, Token,
-                                         highLevelRepoStatsEnc, _GhError)
+import           GhStats.Db             (addToDb, runDb)
+import           GhStats.Types          (Error, Token, highLevelRepoStatsEnc)
 
 go ::
   Command

@@ -1,5 +1,5 @@
-{ mkDerivation, base, bytestring, directory, github, hedgehog
-, http-client, lens, mmorph, mtl, optparse-applicative
+{ mkDerivation, base, bytestring, containers, directory, github
+, hedgehog, http-client, lens, mmorph, mtl, optparse-applicative
 , sqlite-simple, sqlite-simple-errors, stdenv, sv, tasty
 , tasty-hedgehog, text, time, vector
 }:
@@ -15,8 +15,8 @@ mkDerivation {
   ];
   executableHaskellDepends = [ base ];
   testHaskellDepends = [
-    base directory github hedgehog mmorph mtl sqlite-simple tasty
-    tasty-hedgehog time
+    base containers directory github hedgehog mmorph mtl sqlite-simple
+    tasty tasty-hedgehog text time
   ];
   homepage = "https://qfpl.io";
   description = "Pull Github stats for an organisation and its repos";
