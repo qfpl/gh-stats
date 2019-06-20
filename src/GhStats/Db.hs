@@ -65,7 +65,7 @@ initDb =
       , ", count INTEGER NOT NULL"
       , ", uniques INTEGER NOT NULL"
       , ", repo_id INTEGER NOT NULL"
-      , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
+      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableNameQ @RepoStats <> "(id)"
       , ", UNIQUE (position, repo_id)"
       , ", UNIQUE (name, repo_id)"
       , ")"
@@ -77,16 +77,14 @@ initDb =
       , ", count INTEGER NOT NULL"
       , ", uniques INTEGER NTO NULL"
       , ", repo_id INTEGER NOT NULL"
-      , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
+      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableNameQ @RepoStats <> "(id)"
       , ")"
       ]
     qReferrer = qPop $ tableNameQ @GH.Referrer
     qPaths = qPop $ tableNameQ @GH.PopularPath
   in
-    withConn $ \conn -> liftIO $ do
-      execute_ conn qRepos
-      execute_ conn qReferrer
-      execute_ conn qPaths
+    withConn $ \conn -> liftIO . void $
+      traverse (execute_ conn) [qRepos, qReferrer, qPaths, qViews]
 
 
 addToDb ::
