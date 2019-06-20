@@ -14,7 +14,8 @@ import           Control.Lens                       (Lens', Prism', lens,
                                                      makeLenses, makeWrapped,
                                                      prism, to, (&), (^.),
                                                      _Wrapped)
-import           Control.Monad.Except               (ExceptT, runExceptT, MonadError)
+import           Control.Monad.Except               (ExceptT, MonadError,
+                                                     runExceptT)
 import           Control.Monad.IO.Class             (MonadIO)
 import           Control.Monad.Reader               (MonadReader, ReaderT,
                                                      runReaderT)

@@ -23,7 +23,7 @@ import           Database.SQLite.Simple       (Connection, FromRow, Only (Only),
                                                executeMany, execute_,
                                                lastInsertRowId, query)
 import           Database.SQLite.SimpleErrors (runDBAction)
-import           GitHub.Data.Traffic          (PopularPath, Referrer (Referrer, referrer, referrerCount, referrerUniques))
+import qualified          GitHub as GH
 
 import           GhStats.Db.Types
 import           GhStats.Types                (AsError (_TooManyResults), AsSQLiteResponse (_SQLiteResponse),
@@ -51,6 +51,10 @@ initDb =
       , ", timestamp TEXT NOT NULL"
       , ", stars INTEGER NOT NULL"
       , ", forks INTEGER NOT NULL"
+      , ", views INTEGER NOT NULL"  -- views over the last 14 days
+      , ", unique_views INTEGER NOT NULL" -- unique views over the last 14 days
+      , ", clones INTEGER NOT NULL" -- clones over the last 14 days
+      , ", unique_clones INTEGER NOT NULL" -- unique_clones over the last 14 days
       , ")"
       ]
     qPop tn = mconcat [
@@ -66,8 +70,18 @@ initDb =
       , ", UNIQUE (name, repo_id)"
       , ")"
       ]
-    qReferrer = qPop $ tableNameQ @Referrer
-    qPaths = qPop $ tableNameQ @PopularPath
+    qViews = mconcat [
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbView, " "
+      , "( id INTEGER PRIMARY KEY"
+      , ", timestamp TEXT NOT NULL"
+      , ", count INTEGER NOT NULL"
+      , ", uniques INTEGER NTO NULL"
+      , ", repo_id INTEGER NOT NULL"
+      , ", FOREIGN KEY(repo_id) REFERENCES repo(id)"
+      , ")"
+      ]
+    qReferrer = qPop $ tableNameQ @GH.Referrer
+    qPaths = qPop $ tableNameQ @GH.PopularPath
   in
     withConn $ \conn -> liftIO $ do
       execute_ conn qRepos
@@ -103,7 +117,7 @@ insertRepoStats =
     tnq = tableNameQ @RepoStats
   in
     insert $
-      "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks) VALUES (?,?,?,?)"
+      "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks, views, unique_views, clones, unique_clones) VALUES (?,?,?,?,?,?,?,?)"
 
 fromPopId ::
   Id (Pop a)
@@ -126,7 +140,8 @@ selectRepoStats ::
 selectRepoStats i =
   let
     tnq = tableNameQ @RepoStats
-    q = "SELECT id, name, timestamp, stars, forks FROM " <> tnq <> " WHERE id = ?"
+    q = "SELECT id, name, timestamp, stars, forks, views, unique_views, clones, unique_clones "
+      <> "FROM " <> tnq <> " WHERE id = ?"
   in
     selectById q i
 
@@ -137,11 +152,11 @@ insertReferrers ::
   , TraversableWithIndex Int t
   )
   => Id DbRepoStats
-  -> t Referrer
+  -> t GH.Referrer
   -> m ()
 insertReferrers rsId refs =
   withConn $ \conn ->
-    liftIO . executeMany conn (insertPopQ $ tableNameQ @Referrer) . toDbReferrers rsId $ refs
+    liftIO . executeMany conn (insertPopQ $ tableNameQ @GH.Referrer) . toDbReferrers rsId $ refs
 
 toDbReferrers ::
   ( Foldable t
@@ -149,11 +164,11 @@ toDbReferrers ::
   , TraversableWithIndex Int t
   )
   => Id DbRepoStats
-  -> t Referrer
-  -> [Pop Referrer]
+  -> t GH.Referrer
+  -> [Pop GH.Referrer]
 toDbReferrers rsId =
   let
-    toDbReferrer i Referrer{referrer, referrerCount, referrerUniques} =
+    toDbReferrer i GH.Referrer{GH.referrer, GH.referrerCount, GH.referrerUniques} =
       Pop Nothing i referrer (Count referrerCount) (Uniques referrerUniques) rsId
   in
     imap (toDbReferrer . Position) . toList
@@ -161,10 +176,10 @@ toDbReferrers rsId =
 selectReferrersForRepoStats ::
   DbConstraints e r m
   => Id DbRepoStats
-  -> m [Pop Referrer]
+  -> m [Pop GH.Referrer]
 selectReferrersForRepoStats i =
   withConn $ \conn ->
-    runDb $ query conn (selectPopQ @Referrer <> " WHERE repo_id = ? ORDER BY position") (Only i)
+    runDb $ query conn (selectPopQ @GH.Referrer <> " WHERE repo_id = ? ORDER BY position") (Only i)
 
 insertPopQ ::
   Query
@@ -229,8 +244,11 @@ selectById q idee =
 toDbRepoStats ::
   RepoStats
   -> DbRepoStats
-toDbRepoStats RepoStats{_repoStatsName, _repoStatsTimestamp, _repoStatsStars, _repoStatsForks} =
+toDbRepoStats RepoStats{ _repoStatsName, _repoStatsTimestamp, _repoStatsStars, _repoStatsForks
+                       , _repoStatsViews, _repoStatsClones} =
   DbRepoStats Nothing _repoStatsName _repoStatsTimestamp _repoStatsStars _repoStatsForks
+              (Count . GH.viewsCount $ _repoStatsViews) (Uniques . GH.viewsUniques $ _repoStatsViews)
+              (Count . GH.clonesCount $ _repoStatsClones) (Uniques . GH.clonesUniques $ _repoStatsClones)
 
 insert ::
   ( DbConstraints e r m

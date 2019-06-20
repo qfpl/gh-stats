@@ -44,15 +44,6 @@ import           GhStats.Test               (GhStatsPropReaderT,
                                              GhStatsPropertyT,
                                              runGhStatsPropertyT)
 
-type TestConstraints e r m = (
-    MonadError e m
-  , AsSQLiteResponse e
-  , MonadIO m
-  , MonadReader r m
-  , HasConnection r
-  , MonadGen m
-  )
-
 testDb ::
   Connection
   -> TestTree
@@ -101,6 +92,13 @@ testReferrersRoundTrip conn =
     dbRefsActual <- selectReferrersForRepoStats drsId
     dbReferrersEqual dbRefsExpected dbRefsActual
 
+-- testViewsRoundTrip ::
+--   Connection
+--   -> TestTree
+-- testViewsRoundTrip conn =
+--   ghStatsProp "views round trip" conn $ do
+    
+
 dbReferrersEqual ::
   [Pop GH.Referrer]
   -> [Pop GH.Referrer]
@@ -146,6 +144,10 @@ genDbRepoStats =
   <*> genUTCTime
   <*> genStars
   <*> genForks
+  <*> genCount
+  <*> genUniques
+  <*> genCount
+  <*> genUniques
 
 genStars ::
   MonadGen m
