@@ -222,6 +222,31 @@ selectPop ::
 selectPop idee =
   selectById (selectPopByIdQ @a) $ toPopId idee
 
+insertView ::
+  DbConstraints e r m
+  => DbView
+  -> m (Id DbView)
+insertView =
+  let
+    q =  "INSERT INTO " <> tableNameQ @DbView <> " (timestamp, count, uniques, repo_id) "
+      <> "VALUES (?,?,?,?)"
+  in
+    insert q
+
+selectView ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => Id DbView
+  -> m (Maybe DbView)
+selectView =
+  let
+    q =  "SELECT id, timestamp, count, uniques, repo_id "
+      <> "FROM " <> tableNameQ @DbView <> " "
+      <> "WHERE id = ?"
+  in
+    selectById q
+
 selectById ::
   forall e r m a.
   ( DbConstraints e r m
