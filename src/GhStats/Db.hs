@@ -169,7 +169,7 @@ toDbReferrers rsId =
     toDbReferrer i GH.Referrer{GH.referrer, GH.referrerCount, GH.referrerUniques} =
       Pop Nothing i referrer (Count referrerCount) (Uniques referrerUniques) rsId
   in
-    imap (toDbReferrer . Position) . toList
+    imap (toDbReferrer . Position . succ) . toList
 
 selectReferrersForRepoStats ::
   DbConstraints e r m
