@@ -1,21 +1,23 @@
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module GhStats.DbTest where
 
-import           Control.Monad              (void, (<=<), zipWithM_)
+import           Control.Monad              (void, zipWithM_, (<=<))
 import           Control.Monad.Except       (MonadError)
-import           Control.Monad.IO.Class     (MonadIO)
+import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Control.Monad.Reader       (MonadReader)
+import           Data.Foldable              (traverse_)
 import           Data.List                  (nub)
-import qualified Data.Map as M
+import qualified Data.Map                   as M
 import           Data.Maybe                 (fromJust)
 import           Data.Proxy                 (Proxy (Proxy))
 import           Data.Text                  (Text)
 import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
                                              secondsToDiffTime)
-import           Database.SQLite.Simple     (Connection)
+import           Database.SQLite.Simple     (Connection, execute_)
 import qualified GitHub                     as GH
 
 import           Hedgehog                   (GenT, MonadGen, Property,
@@ -32,8 +34,9 @@ import           GhStats.Db                 (initDb, insertPop, insertReferrers,
                                              selectReferrersForRepoStats,
                                              selectRepoStats, toDbReferrers)
 import           GhStats.Db.Types           (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                             HasTable (tableName), Id (Id),
-                                             Pop (Pop, popId),
+                                             DbView,
+                                             HasTable (tableName, tableNameQ),
+                                             Id (Id), Pop (Pop, popId),
                                              Position (Position),
                                              Uniques (Uniques))
 import           GhStats.Types              (AsSQLiteResponse, Forks (..),
@@ -47,18 +50,23 @@ import           GhStats.Test               (GhStatsPropReaderT,
 testDb ::
   Connection
   -> TestTree
-testDb conn = testGroup "GhStats.Db" . fmap ($ conn) $ [
-    testRepoStatsRoundTrip
-  , testReferrerRoundTrip
-  , testPathRoundTrip
-  , testReferrersRoundTrip
+testDb conn =
+  testGroup "GhStats.Db" . fmap mkProp $ [
+    ("DbRepoStats round trip", testRepoStatsRoundTrip)
+  , ("Referrer round trip", testReferrerRoundTrip)
+  , ("Path round trip", testPathRoundTrip)
+  , ("Referrers round trip", testReferrersRoundTrip)
   ]
+  where
+    mkProp (name, prop) =
+      testProperty name . property $ resetDb conn >> prop conn
 
 testRepoStatsRoundTrip ::
   Connection
-  -> TestTree
+  -> PropertyT IO ()
 testRepoStatsRoundTrip conn =
-  ghStatsProp "DbRepoStats round trip" conn $ do
+  runGhStatsPropertyT conn $ do
+    resetDb conn
     drs <- forAllT genDbRepoStats
     drsId <- insertRepoStats drs
     let
@@ -68,36 +76,50 @@ testRepoStatsRoundTrip conn =
 
 testReferrerRoundTrip ::
   Connection
-  -> TestTree
+  -> PropertyT IO ()
 testReferrerRoundTrip =
   popRoundTrip (Proxy :: Proxy GH.Referrer)
 
 testPathRoundTrip ::
   Connection
-  -> TestTree
+  -> PropertyT IO ()
 testPathRoundTrip =
   popRoundTrip (Proxy :: Proxy GH.PopularPath)
 
 testReferrersRoundTrip ::
   Connection
-  -> TestTree
-testReferrersRoundTrip conn =
-  ghStatsProp "referrers round trip" conn $ do
-    drs <- forAllT genDbRepoStats
-    refs <- forAllT genReferrers
-    drsId <- insertRepoStats drs
-    let
-      dbRefsExpected = toDbReferrers drsId refs
-    insertReferrers drsId refs
-    dbRefsActual <- selectReferrersForRepoStats drsId
-    dbReferrersEqual dbRefsExpected dbRefsActual
+  -> PropertyT IO ()
+testReferrersRoundTrip conn = runGhStatsPropertyT conn $ do
+  drs <- forAllT genDbRepoStats
+  refs <- forAllT genReferrers
+  drsId <- insertRepoStats drs
+  let
+    dbRefsExpected = toDbReferrers drsId refs
+  insertReferrers drsId refs
+  dbRefsActual <- selectReferrersForRepoStats drsId
+  dbReferrersEqual dbRefsExpected dbRefsActual
+
 
 -- testViewsRoundTrip ::
 --   Connection
 --   -> TestTree
 -- testViewsRoundTrip conn =
 --   ghStatsProp "views round trip" conn $ do
-    
+--     drs <- forAllT genDbRepoStats
+--     drsId <- insertRepoStats drs
+--     dbView <- forAllT genDbView
+
+resetDb ::
+  MonadIO m
+  => Connection
+  -> m ()
+resetDb conn =
+  liftIO $ traverse_ (execute_ conn . ("DELETE FROM " <>)) [
+      tableNameQ @DbRepoStats
+    , tableNameQ @GH.Referrer
+    , tableNameQ @GH.PopularPath
+    , tableNameQ @DbView
+    ]
 
 dbReferrersEqual ::
   [Pop GH.Referrer]
@@ -106,33 +128,21 @@ dbReferrersEqual ::
 dbReferrersEqual =
   zipWithM_ (\e a -> e === (a {popId = Nothing}))
 
-ghStatsProp ::
-  TestName
-  -> Connection
-  -> GhStatsPropertyT ()
-  -> TestTree
-ghStatsProp propName conn =
-  testProperty propName . property . runGhStatsPropertyT conn
-
 popRoundTrip ::
   forall a.
   HasTable a
   => Proxy a
   -> Connection
-  -> TestTree
-popRoundTrip _ conn =
+  -> PropertyT IO ()
+popRoundTrip _ conn = runGhStatsPropertyT conn $ do
+  drs <- forAllT genDbRepoStats
+  pop <- forAllT genPop
+  drsId <- insertRepoStats drs
+  popId' <- insertPop @a pop
   let
-    testName = show (tableName @a) <> " round trip"
-  in
-    ghStatsProp testName conn $ do
-      drs <- forAllT genDbRepoStats
-      pop <- forAllT genPop
-      drsId <- insertRepoStats drs
-      popId' <- insertPop @a pop
-      let
-        popWithId =
-          pop {popId = Just popId'}
-      maybe failure (=== popWithId) =<< selectPop popId'
+    popWithId =
+      pop {popId = Just popId'}
+  maybe failure (=== popWithId) =<< selectPop popId'
 
 genDbRepoStats ::
    MonadGen m
@@ -218,6 +228,16 @@ genPop =
   <*> genCount
   <*> genUniques
   <*> genId
+
+-- genDbView ::
+--   MonadGen m
+--   => m DbView
+-- genDbView =
+--   DbView Nothing
+--   <$> genUTCTime
+--   <*> genCount
+--   <*> genUniques
+--   <*>
 
 genCount ::
   MonadGen m
