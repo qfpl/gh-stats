@@ -99,6 +99,12 @@ testReferrersRoundTrip conn = runGhStatsPropertyT conn $ do
   dbRefsActual <- selectReferrersForRepoStats drsId
   dbReferrersEqual dbRefsExpected dbRefsActual
 
+testNonExistentRepo ::
+  Connection
+  -> PropertyT IO ()
+testNonExistentRepo conn = runGhStatsPropertyT conn $ do
+  ref <- forAllT genPop
+  insertPop ref
 
 -- testViewsRoundTrip ::
 --   Connection
