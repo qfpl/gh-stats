@@ -27,9 +27,10 @@ import           Database.SQLite.Simple             (Connection, execute_)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError))
 import qualified GitHub                             as GH
 
-import           Hedgehog                           (GenT, MonadGen, Property,
-                                                     PropertyT, annotateShow,
-                                                     evalM, evalEither, failure, forAll,
+import           Hedgehog                           (GenT, MonadGen, MonadTest,
+                                                     Property, PropertyT,
+                                                     annotateShow, evalEither,
+                                                     evalM, failure, forAll,
                                                      property, success,
                                                      tripping, (===))
 import qualified Hedgehog.Gen                       as Gen
@@ -81,15 +82,15 @@ testDb conn =
 testRepoStatsRoundTrip ::
   Connection
   -> PropertyT IO ()
-testRepoStatsRoundTrip conn =
-  runGhStatsPropertyT conn $ do
-    drs <- forAllT genDbRepoStats
+testRepoStatsRoundTrip conn = do
+    drs <- forAll genDbRepoStats
     resetDb conn
-    drsId <- insertRepoStats drs
+    drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
+    selectedRepoStats <- (evalEither =<<) . hoozit conn $ selectRepoStats drsId
     let
       drsWithId =
         drs {_dbRepoStatsId = Just drsId}
-    maybe failure (=== drsWithId) =<< selectRepoStats drsId
+    maybe failure (=== drsWithId) selectedRepoStats
 
 testReferrerRoundTrip ::
   Connection
@@ -106,15 +107,15 @@ testPathRoundTrip =
 testReferrersRoundTrip ::
   Connection
   -> PropertyT IO ()
-testReferrersRoundTrip conn = runGhStatsPropertyT conn $ do
-  drs <- forAllT genDbRepoStats
-  refs <- forAllT genReferrers
+testReferrersRoundTrip conn = do
+  drs <- forAll genDbRepoStats
+  refs <- forAll genReferrers
   resetDb conn
-  drsId <- insertRepoStats drs
+  drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
   let
     dbRefsExpected = toDbReferrers drsId refs
-  insertReferrers drsId refs
-  dbRefsActual <- selectReferrersForRepoStats drsId
+  (evalEither =<<) . hoozit conn $ insertReferrers drsId refs
+  dbRefsActual <- (evalEither =<<) . hoozit conn $ selectReferrersForRepoStats drsId
   dbReferrersEqual dbRefsExpected dbRefsActual
 
 testNonExistentRepo ::
@@ -123,7 +124,7 @@ testNonExistentRepo ::
 testNonExistentRepo conn = do
   ref <- forAllT genPop
   resetDb conn
-  eRefId <- runExceptT . flip runReaderT conn $ insertPop ref
+  eRefId <- hoozit conn $ insertPop ref
   liftIO $ checkResult eRefId
   where
     checkResult ::
@@ -159,9 +160,12 @@ resetDb conn =
     ]
 
 dbReferrersEqual ::
-  [Pop GH.Referrer]
+  ( Applicative m
+  , MonadTest m
+  )
+  => [Pop GH.Referrer]
   -> [Pop GH.Referrer]
-  -> GhStatsPropertyT ()
+  -> m ()
 dbReferrersEqual =
   zipWithM_ (\e a -> e === (a {popId = Nothing}))
 
