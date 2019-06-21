@@ -81,12 +81,21 @@ initDb =
       , ", FOREIGN KEY(repo_id) REFERENCES " <> tableNameQ @RepoStats <> "(id)"
       , ")"
       ]
+    qClones = mconcat [
+        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbClone, " "
+      , "( id INTEGER PRIMARY KEY"
+      , ", timestamp TEXT NOT NULL"
+      , ", count INTEGER NOT NULL"
+      , ", uniques INTEGER NTO NULL"
+      , ", repo_id INTEGER NOT NULL"
+      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableNameQ @RepoStats <> "(id)"
+      , ")"
+      ]
     qReferrer = qPop $ tableNameQ @GH.Referrer
     qPaths = qPop $ tableNameQ @GH.PopularPath
   in
     withConn $ \conn -> liftIO . void $
-      traverse (execute_ conn) [enableForeignKeys, qRepos, qReferrer, qPaths, qViews]
-
+      traverse (execute_ conn) [enableForeignKeys, qRepos, qReferrer, qPaths, qViews, qClones]
 
 addToDb ::
   ( DbConstraints e r m

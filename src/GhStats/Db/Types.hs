@@ -126,3 +126,24 @@ instance ToRow DbView where
 instance FromRow DbView where
   fromRow =
     DbView <$> field <*> field <*> field <*> field <*> field
+
+data DbClone =
+  DbClone
+  { _dbCloneId        :: !(Maybe (Id DbClone))
+  , _dbCloneTimestamp :: !UTCTime
+  , _dbCloneCount     :: !(Count DbClone)
+  , _dbCloneUniques   :: !(Uniques DbClone)
+  , _dbCloneRepoId    :: !(Id DbRepoStats)
+  }
+  deriving (Eq, Show)
+
+instance HasTable DbClone where
+  tableName = "clones"
+
+instance ToRow DbClone where
+  toRow DbClone{..} =
+    toRow (_dbCloneTimestamp, _dbCloneCount, _dbCloneUniques, _dbCloneRepoId)
+
+instance FromRow DbClone where
+  fromRow =
+    DbClone <$> field <*> field <*> field <*> field <*> field
