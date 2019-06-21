@@ -42,12 +42,13 @@ import           Test.Tasty.Hedgehog                (testProperty)
 
 import           GhStats.Db                         (initDb, insertPop,
                                                      insertReferrers,
-                                                     insertRepoStats, selectPop,
+                                                     insertRepoStats,
+                                                     insertView, selectPop,
                                                      selectReferrersForRepoStats,
                                                      selectRepoStats,
-                                                     toDbReferrers)
+                                                     selectView, toDbReferrers)
 import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                                     DbView,
+                                                     DbView (DbView, _dbViewId, _dbViewRepoId),
                                                      HasTable (tableName, tableNameQ),
                                                      Id (Id),
                                                      Pop (Pop, popId, popRepoId),
@@ -74,6 +75,7 @@ testDb conn =
   , ("Path round trip", testPathRoundTrip)
   , ("Referrers round trip", testReferrersRoundTrip)
   , ("No repo for referrer fails", testNonExistentRepo)
+  , ("View round trip", testViewRoundTrip)
   ]
   where
     mkProp (name, prop) =
@@ -138,14 +140,19 @@ testNonExistentRepo conn = do
       SQLiteError (SQLConstraintError _ _) -> pure ()
       e'                                   -> throw e'
 
--- testViewsRoundTrip ::
---   Connection
---   -> TestTree
--- testViewsRoundTrip conn =
---   ghStatsProp "views round trip" conn $ do
---     drs <- forAllT genDbRepoStats
---     drsId <- insertRepoStats drs
---     dbView <- forAllT genDbView
+testViewRoundTrip ::
+  Connection
+  -> PropertyT IO ()
+testViewRoundTrip conn = do
+  drs <- forAllT genDbRepoStats
+  dbViewBadId <- forAllT genDbView
+  resetDb conn
+  drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
+  let dbView = dbViewBadId {_dbViewRepoId = drsId}
+  dvId <- (evalEither =<<) . hoozit conn $ insertView dbView
+  let dbViewExpected = dbView {_dbViewId = Just dvId}
+  dbViewSelected <- (evalEither =<<) . hoozit conn $ selectView dvId
+  Just dbViewExpected === dbViewSelected
 
 resetDb ::
   MonadIO m
@@ -278,15 +285,15 @@ genPop =
   <*> genUniques
   <*> genId
 
--- genDbView ::
---   MonadGen m
---   => m DbView
--- genDbView =
---   DbView Nothing
---   <$> genUTCTime
---   <*> genCount
---   <*> genUniques
---   <*>
+genDbView ::
+  MonadGen m
+  => m DbView
+genDbView =
+  DbView Nothing
+  <$> genUTCTime
+  <*> genCount
+  <*> genUniques
+  <*> genId
 
 genCount ::
   MonadGen m
