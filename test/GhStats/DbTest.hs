@@ -181,7 +181,7 @@ popRoundTrip _ conn =  do
   resetDb conn
   drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
   let pop = popBadRepoId {popRepoId = drsId}
-  popId' <- (evalEither =<<) . hoozit conn $ insertPop @a popBadRepoId
+  popId' <- (evalEither =<<) . hoozit conn $ insertPop @a pop
   mPopSelected <- (evalEither =<<) . hoozit conn $ selectPop popId'
   let popWithId = pop {popId = Just popId'}
   maybe failure (=== popWithId) mPopSelected
