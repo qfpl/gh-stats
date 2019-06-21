@@ -44,6 +44,7 @@ initDb ::
   => m ()
 initDb =
   let
+    enableForeignKeys = "PRAGMA foreign_keys = ON;"
     qRepos = mconcat [
         "CREATE TABLE IF NOT EXISTS ", tableNameQ @RepoStats, " "
       , "( id INTEGER PRIMARY KEY"
@@ -84,7 +85,7 @@ initDb =
     qPaths = qPop $ tableNameQ @GH.PopularPath
   in
     withConn $ \conn -> liftIO . void $
-      traverse (execute_ conn) [qRepos, qReferrer, qPaths, qViews]
+      traverse (execute_ conn) [enableForeignKeys, qRepos, qReferrer, qPaths, qViews]
 
 
 addToDb ::
