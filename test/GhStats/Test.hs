@@ -22,4 +22,4 @@ runGhStatsPropertyT ::
   -> GhStatsPropertyT a
   -> PropertyT IO a
 runGhStatsPropertyT conn =
-  hoist (\rem -> fmap (either throw id) . runExceptT $ runReaderT rem conn)
+  hoist (fmap (either throw id) . runExceptT . flip runReaderT conn)
