@@ -73,15 +73,15 @@ testDb conn =
   ]
   where
     mkProp (name, prop) =
-      testProperty name . property $ resetDb conn >> prop conn
+      testProperty name . property $ prop conn
 
 testRepoStatsRoundTrip ::
   Connection
   -> PropertyT IO ()
 testRepoStatsRoundTrip conn =
   runGhStatsPropertyT conn $ do
-    resetDb conn
     drs <- forAllT genDbRepoStats
+    resetDb conn
     drsId <- insertRepoStats drs
     let
       drsWithId =
@@ -106,6 +106,7 @@ testReferrersRoundTrip ::
 testReferrersRoundTrip conn = runGhStatsPropertyT conn $ do
   drs <- forAllT genDbRepoStats
   refs <- forAllT genReferrers
+  resetDb conn
   drsId <- insertRepoStats drs
   let
     dbRefsExpected = toDbReferrers drsId refs
@@ -118,6 +119,7 @@ testNonExistentRepo ::
   -> PropertyT IO ()
 testNonExistentRepo conn = do
   ref <- forAllT genPop
+  resetDb conn
   eRefId <- runExceptT . flip runReaderT conn $ insertPop ref
   liftIO $ checkResult eRefId
   where
