@@ -28,9 +28,10 @@ import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstrai
 import qualified GitHub                             as GH
 
 import           Hedgehog                           (GenT, MonadGen, Property,
-                                                     PropertyT, failure,
-                                                     failure, forAll, property,
-                                                     success, tripping, (===))
+                                                     PropertyT, annotateShow,
+                                                     evalM, evalEither, failure, forAll,
+                                                     property, success,
+                                                     tripping, (===))
 import qualified Hedgehog.Gen                       as Gen
 import           Hedgehog.Internal.Property         (forAllT)
 import qualified Hedgehog.Range                     as Range
@@ -47,14 +48,16 @@ import           GhStats.Db                         (initDb, insertPop,
 import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
                                                      DbView,
                                                      HasTable (tableName, tableNameQ),
-                                                     Id (Id), Pop (Pop, popId),
+                                                     Id (Id),
+                                                     Pop (Pop, popId, popRepoId),
                                                      Position (Position),
                                                      Uniques (Uniques))
 import           GhStats.Types                      (AsSQLiteResponse,
                                                      Error (SQLiteError),
-                                                     Forks (..), HasConnection,
-                                                     RepoStats, Stars (..),
-                                                     runGhStatsM)
+                                                     Forks (..),
+                                                     GhStatsM (GhStatsM),
+                                                     HasConnection, RepoStats,
+                                                     Stars (..), runGhStatsM)
 
 import           GhStats.Test                       (GhStatsPropReaderT,
                                                      GhStatsPropertyT,
@@ -168,15 +171,23 @@ popRoundTrip ::
   => Proxy a
   -> Connection
   -> PropertyT IO ()
-popRoundTrip _ conn = runGhStatsPropertyT conn $ do
+popRoundTrip _ conn =  do
   drs <- forAllT genDbRepoStats
-  pop <- forAllT genPop
-  drsId <- insertRepoStats drs
-  popId' <- insertPop @a pop
-  let
-    popWithId =
-      pop {popId = Just popId'}
-  maybe failure (=== popWithId) =<< selectPop popId'
+  popBadRepoId <- forAllT genPop
+  resetDb conn
+  drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
+  let pop = popBadRepoId {popRepoId = drsId}
+  popId' <- (evalEither =<<) . hoozit conn $ insertPop @a popBadRepoId
+  mPopSelected <- (evalEither =<<) . hoozit conn $ selectPop popId'
+  let popWithId = pop {popId = Just popId'}
+  maybe failure (=== popWithId) mPopSelected
+
+hoozit ::
+  Connection
+  -> GhStatsM a
+  -> PropertyT IO (Either Error a)
+hoozit conn (GhStatsM m)=
+  liftIO . runExceptT $ runReaderT m conn
 
 genDbRepoStats ::
    MonadGen m
