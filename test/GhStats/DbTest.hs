@@ -147,10 +147,10 @@ resetDb ::
   -> m ()
 resetDb conn =
   liftIO $ traverse_ (execute_ conn . ("DELETE FROM " <>)) [
-      tableNameQ @DbRepoStats
+      tableNameQ @DbView
     , tableNameQ @GH.Referrer
     , tableNameQ @GH.PopularPath
-    , tableNameQ @DbView
+    , tableNameQ @DbRepoStats
     ]
 
 dbReferrersEqual ::
