@@ -5,47 +5,60 @@
 
 module GhStats.DbTest where
 
-import           Control.Monad              (void, zipWithM_, (<=<))
-import           Control.Monad.Except       (MonadError)
-import           Control.Monad.IO.Class     (MonadIO, liftIO)
-import           Control.Monad.Reader       (MonadReader)
-import           Data.Foldable              (traverse_)
-import           Data.List                  (nub)
-import qualified Data.Map                   as M
-import           Data.Maybe                 (fromJust)
-import           Data.Proxy                 (Proxy (Proxy))
-import           Data.Text                  (Text)
-import           Data.Time                  (UTCTime (UTCTime), fromGregorian,
-                                             secondsToDiffTime)
-import           Database.SQLite.Simple     (Connection, execute_)
-import qualified GitHub                     as GH
+import           Control.Exception                  (throw)
+import           Control.Monad                      (join, void, zipWithM_,
+                                                     (<=<))
+import           Control.Monad.Except               (ExceptT, MonadError,
+                                                     runExceptT)
+import           Control.Monad.IO.Class             (MonadIO, liftIO)
+import           Control.Monad.Morph                (hoist)
+import           Control.Monad.Reader               (MonadReader, ReaderT,
+                                                     runReaderT)
+import           Data.Foldable                      (traverse_)
+import           Data.List                          (nub)
+import qualified Data.Map                           as M
+import           Data.Maybe                         (fromJust)
+import           Data.Proxy                         (Proxy (Proxy))
+import           Data.Text                          (Text)
+import           Data.Time                          (UTCTime (UTCTime),
+                                                     fromGregorian,
+                                                     secondsToDiffTime)
+import           Database.SQLite.Simple             (Connection, execute_)
+import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError))
+import qualified GitHub                             as GH
 
-import           Hedgehog                   (GenT, MonadGen, Property,
-                                             PropertyT, failure, forAll,
-                                             property, tripping, (===))
-import qualified Hedgehog.Gen               as Gen
-import           Hedgehog.Internal.Property (forAllT)
-import qualified Hedgehog.Range             as Range
-import           Test.Tasty                 (TestName, TestTree, testGroup)
-import           Test.Tasty.Hedgehog        (testProperty)
+import           Hedgehog                           (GenT, MonadGen, Property,
+                                                     PropertyT, failure,
+                                                     failure, forAll, property,
+                                                     success, tripping, (===))
+import qualified Hedgehog.Gen                       as Gen
+import           Hedgehog.Internal.Property         (forAllT)
+import qualified Hedgehog.Range                     as Range
+import           Test.Tasty                         (TestName, TestTree,
+                                                     testGroup)
+import           Test.Tasty.Hedgehog                (testProperty)
 
-import           GhStats.Db                 (initDb, insertPop, insertReferrers,
-                                             insertRepoStats, selectPop,
-                                             selectReferrersForRepoStats,
-                                             selectRepoStats, toDbReferrers)
-import           GhStats.Db.Types           (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                             DbView,
-                                             HasTable (tableName, tableNameQ),
-                                             Id (Id), Pop (Pop, popId),
-                                             Position (Position),
-                                             Uniques (Uniques))
-import           GhStats.Types              (AsSQLiteResponse, Forks (..),
-                                             HasConnection, RepoStats,
-                                             Stars (..), runGhStatsM)
+import           GhStats.Db                         (initDb, insertPop,
+                                                     insertReferrers,
+                                                     insertRepoStats, selectPop,
+                                                     selectReferrersForRepoStats,
+                                                     selectRepoStats,
+                                                     toDbReferrers)
+import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
+                                                     DbView,
+                                                     HasTable (tableName, tableNameQ),
+                                                     Id (Id), Pop (Pop, popId),
+                                                     Position (Position),
+                                                     Uniques (Uniques))
+import           GhStats.Types                      (AsSQLiteResponse,
+                                                     Error (SQLiteError),
+                                                     Forks (..), HasConnection,
+                                                     RepoStats, Stars (..),
+                                                     runGhStatsM)
 
-import           GhStats.Test               (GhStatsPropReaderT,
-                                             GhStatsPropertyT,
-                                             runGhStatsPropertyT)
+import           GhStats.Test                       (GhStatsPropReaderT,
+                                                     GhStatsPropertyT,
+                                                     runGhStatsPropertyT)
 
 testDb ::
   Connection
@@ -56,6 +69,7 @@ testDb conn =
   , ("Referrer round trip", testReferrerRoundTrip)
   , ("Path round trip", testPathRoundTrip)
   , ("Referrers round trip", testReferrersRoundTrip)
+  , ("No repo for referrer fails", testNonExistentRepo)
   ]
   where
     mkProp (name, prop) =
@@ -102,9 +116,21 @@ testReferrersRoundTrip conn = runGhStatsPropertyT conn $ do
 testNonExistentRepo ::
   Connection
   -> PropertyT IO ()
-testNonExistentRepo conn = runGhStatsPropertyT conn $ do
+testNonExistentRepo conn = do
   ref <- forAllT genPop
-  insertPop ref
+  eRefId <- runExceptT . flip runReaderT conn $ insertPop ref
+  liftIO $ checkResult eRefId
+  where
+    checkResult ::
+      Either Error (Id GH.Referrer)
+      -> IO ()
+    checkResult =
+      either assertIsConstraintError (const err)
+    err = error "Expected failure due to foreign key constraint"
+    assertIsConstraintError :: Error -> IO ()
+    assertIsConstraintError e = case e of
+      SQLiteError (SQLConstraintError _ _) -> pure ()
+      e'                                   -> throw e'
 
 -- testViewsRoundTrip ::
 --   Connection

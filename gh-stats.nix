@@ -16,7 +16,7 @@ mkDerivation {
   executableHaskellDepends = [ base ];
   testHaskellDepends = [
     base containers directory github hedgehog mmorph mtl sqlite-simple
-    tasty tasty-hedgehog text time
+    sqlite-simple-errors tasty tasty-hedgehog text time
   ];
   homepage = "https://qfpl.io";
   description = "Pull Github stats for an organisation and its repos";
