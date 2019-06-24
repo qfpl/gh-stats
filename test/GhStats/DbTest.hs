@@ -43,10 +43,10 @@ import           Test.Tasty.Hedgehog                (testProperty)
 import           GhStats.Db                         (initDb, insertPop,
                                                      insertReferrers,
                                                      insertRepoStats,
-                                                     insertViews, selectPop,
+                                                     insertVC, selectPop,
                                                      selectReferrersForRepoStats,
                                                      selectRepoStats,
-                                                     selectViews, toDbReferrers)
+                                                     selectVC, toDbReferrers)
 import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
                                                      VC (VC, _vcId, _vcRepoId),
                                                      HasTable (tableName, tableNameQ),
@@ -76,7 +76,7 @@ testDb conn =
   , ("Referrers round trip", testReferrersRoundTrip)
   , ("No repo for referrer fails", testNonExistentRepo)
   , ("View round trip", testViewRoundTrip)
-  -- , ("Clone round trip", testCloneRoundTrip)
+  , ("Clone round trip", testClonesRoundTrip)
   ]
   where
     mkProp (name, prop) =
@@ -144,16 +144,31 @@ testNonExistentRepo conn = do
 testViewRoundTrip ::
   Connection
   -> PropertyT IO ()
-testViewRoundTrip conn = do
+testViewRoundTrip =
+  testVCRoundTrip (Proxy :: Proxy GH.Views)
+
+testClonesRoundTrip ::
+  Connection
+  -> PropertyT IO ()
+testClonesRoundTrip =
+  testVCRoundTrip (Proxy :: Proxy GH.Clones)
+
+testVCRoundTrip ::
+  forall a.
+  HasTable a
+  => Proxy a
+  -> Connection
+  -> PropertyT IO ()
+testVCRoundTrip _ conn = do
   drs <- forAllT genDbRepoStats
-  dbViewBadId <- forAllT genVC
+  vcBadId <- forAllT genVC
   resetDb conn
   drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
-  let dbView = dbViewBadId {_vcRepoId = drsId}
-  dvId <- (evalEither =<<) . hoozit conn $ insertViews dbView
-  let dbViewExpected = dbView {_vcId = Just dvId}
-  dbViewSelected <- (evalEither =<<) . hoozit conn $ selectViews dvId
-  Just dbViewExpected === dbViewSelected
+  let vc = vcBadId {_vcRepoId = drsId}
+  vcId <- (evalEither =<<) . hoozit conn $ insertVC @a vc
+  let vcExpected = vc {_vcId = Just vcId}
+  vcSelected <- (evalEither =<<) . hoozit conn $ selectVC vcId
+  Just vcExpected === vcSelected
 
 resetDb ::
   MonadIO m
