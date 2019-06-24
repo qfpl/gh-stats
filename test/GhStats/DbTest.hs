@@ -49,13 +49,13 @@ import           GhStats.Db                         (initDb, insertPop,
                                                      selectRepoStats, selectVC,
                                                      toDbPath, toDbPops,
                                                      toDbReferrer)
-import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
+import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
                                                      HasTable (tableName, tableNameQ),
                                                      Id (Id),
                                                      Pop (Pop, popId, popRepoId),
                                                      Position (Position),
                                                      Uniques (Uniques),
-                                                     VC (VC, _vcId, _vcRepoId))
+                                                     VC (VC, _vcId, _vcRepoId, _vcRepoName))
 import           GhStats.Types                      (AsSQLiteResponse,
                                                      Error (SQLiteError),
                                                      Forks (..),
@@ -202,7 +202,7 @@ testVCRoundTrip _ conn = do
   vcBadId <- forAllT genVC
   resetDb conn
   drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
-  let vc = vcBadId {_vcRepoId = drsId}
+  let vc = vcBadId {_vcRepoId = drsId, _vcRepoName = _dbRepoStatsName drs}
   vcId <- (evalEither =<<) . hoozit conn $ insertVC @a vc
   let vcExpected = vc {_vcId = Just vcId}
   vcSelected <- (evalEither =<<) . hoozit conn $ selectVC vcId
