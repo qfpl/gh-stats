@@ -214,13 +214,16 @@ insertPops toDbPop pops =
   withConn $ \conn ->
     liftIO . executeMany conn (insertPopQ $ tableNameQ @a) . toDbPops toDbPop $ pops
 
-selectReferrersForRepoStats ::
-  DbConstraints e r m
+selectPopsForRepoStats ::
+  forall a e r m.
+  ( DbConstraints e r m
+  , HasTable a
+  )
   => Id DbRepoStats
-  -> m [Pop GH.Referrer]
-selectReferrersForRepoStats i =
+  -> m [Pop a]
+selectPopsForRepoStats i =
   withConn $ \conn ->
-    runDb $ query conn (selectPopQ @GH.Referrer <> " WHERE repo_id = ? ORDER BY position") (Only i)
+    runDb $ query conn (selectPopQ @a <> " WHERE repo_id = ? ORDER BY position") (Only i)
 
 insertViews ::
   DbConstraints e r m

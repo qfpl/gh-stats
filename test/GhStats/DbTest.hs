@@ -27,11 +27,11 @@ import           Database.SQLite.Simple             (Connection, execute_)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError))
 import qualified GitHub                             as GH
 
-import           Hedgehog                           (GenT, MonadGen, MonadTest,
-                                                     Property, PropertyT,
-                                                     annotateShow, evalEither,
-                                                     evalM, failure, forAll,
-                                                     property, success,
+import           Hedgehog                           (Gen, GenT, MonadGen,
+                                                     MonadTest, Property,
+                                                     PropertyT, annotateShow,
+                                                     evalEither, evalM, failure,
+                                                     forAll, property, success,
                                                      tripping, (===))
 import qualified Hedgehog.Gen                       as Gen
 import           Hedgehog.Internal.Property         (forAllT)
@@ -41,19 +41,20 @@ import           Test.Tasty                         (TestName, TestTree,
 import           Test.Tasty.Hedgehog                (testProperty)
 
 import           GhStats.Db                         (initDb, insertPop,
+                                                     insertPops,
                                                      insertReferrers,
-                                                     insertRepoStats,
-                                                     insertVC, selectPop,
-                                                     selectReferrersForRepoStats,
-                                                     selectRepoStats,
-                                                     selectVC, toDbReferrer, toDbPops)
+                                                     insertRepoStats, insertVC,
+                                                     selectPop,
+                                                     selectPopsForRepoStats,
+                                                     selectRepoStats, selectVC,
+                                                     toDbPops, toDbReferrer)
 import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                                     VC (VC, _vcId, _vcRepoId),
                                                      HasTable (tableName, tableNameQ),
                                                      Id (Id),
                                                      Pop (Pop, popId, popRepoId),
                                                      Position (Position),
-                                                     Uniques (Uniques))
+                                                     Uniques (Uniques),
+                                                     VC (VC, _vcId, _vcRepoId))
 import           GhStats.Types                      (AsSQLiteResponse,
                                                      Error (SQLiteError),
                                                      Forks (..),
@@ -110,16 +111,27 @@ testPathRoundTrip =
 testReferrersRoundTrip ::
   Connection
   -> PropertyT IO ()
-testReferrersRoundTrip conn = do
+testReferrersRoundTrip =
+  testPopsRoundTrip genReferrers toDbReferrer
+
+testPopsRoundTrip ::
+  ( Show a
+  , HasTable a
+  )
+  => Gen [a]
+  -> (Id DbRepoStats -> Position a -> a -> Pop a)
+  -> Connection
+  -> PropertyT IO ()
+testPopsRoundTrip genA convert conn = do
   drs <- forAll genDbRepoStats
-  refs <- forAll genReferrers
+  as <- forAll genA
   resetDb conn
   drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
   let
-    dbRefsExpected = toDbPops (toDbReferrer drsId) refs
-  (evalEither =<<) . hoozit conn $ insertReferrers drsId refs
-  dbRefsActual <- (evalEither =<<) . hoozit conn $ selectReferrersForRepoStats drsId
-  dbReferrersEqual dbRefsExpected dbRefsActual
+    dbPopsExpected = toDbPops (convert drsId) as
+  (evalEither =<<) . hoozit conn $ insertPops (convert drsId) as
+  dbPopsActual <- (evalEither =<<) . hoozit conn $ selectPopsForRepoStats drsId
+  dbPopsEqual dbPopsExpected dbPopsActual
 
 testNonExistentRepo ::
   Connection
@@ -183,14 +195,14 @@ resetDb conn =
     , tableNameQ @DbRepoStats
     ]
 
-dbReferrersEqual ::
+dbPopsEqual ::
   ( Applicative m
   , MonadTest m
   )
-  => [Pop GH.Referrer]
-  -> [Pop GH.Referrer]
+  => [Pop a]
+  -> [Pop a]
   -> m ()
-dbReferrersEqual =
+dbPopsEqual =
   zipWithM_ (\e a -> e === (a {popId = Nothing}))
 
 popRoundTrip ::
@@ -225,24 +237,12 @@ genDbRepoStats =
   Nothing
   <$> genName
   <*> genUTCTime
-  <*> genStars
-  <*> genForks
+  <*> (Stars <$> genIntCount)
+  <*> (Forks <$> genIntCount)
   <*> genCount
   <*> genUniques
   <*> genCount
   <*> genUniques
-
-genStars ::
-  MonadGen m
-  => m Stars
-genStars =
-  Stars <$> Gen.int (Range.linear 0 1000000)
-
-genForks ::
-  MonadGen m
-  => m Forks
-genForks =
-  Forks <$> Gen.int (Range.linear 0 1000000)
 
 genId ::
   MonadGen m
@@ -278,10 +278,7 @@ genReferrer ::
   MonadGen m
   => m GH.Referrer
 genReferrer =
-  let
-    genIntCount = Gen.int (Range.linear 0 1000000)
-  in
-    GH.Referrer <$> genName <*> genIntCount <*> genIntCount
+  GH.Referrer <$> genName <*> genIntCount <*> genIntCount
 
 -- List of referrers with unique names
 genReferrers ::
@@ -289,6 +286,37 @@ genReferrers ::
   => m [GH.Referrer]
 genReferrers =
   M.elems <$> Gen.map (Range.constant 0 15) ((\r -> (GH.referrer r, r)) <$> genReferrer)
+
+genPath ::
+  MonadGen m
+  => m GH.PopularPath
+genPath =
+  let
+    genText = Gen.text (Range.linear 1 100) Gen.ascii
+  in
+    GH.PopularPath <$> genText <*> genText <*> genIntCount <*> genIntCount
+
+genPaths ::
+  MonadGen m
+  => m [GH.PopularPath]
+genPaths =
+  genUniqueList genPath GH.popularPath
+
+genUniqueList ::
+  ( MonadGen m
+  , Ord b
+  )
+  => m a
+  -> (a -> b)
+  -> m [a]
+genUniqueList gen f =
+  fmap M.elems . Gen.map (Range.constant 0 15) . fmap (\a -> (f a, a)) $ gen
+
+genIntCount ::
+  MonadGen m
+  => m Int
+genIntCount =
+  Gen.int (Range.linear 0 1000000)
 
 genPop ::
   MonadGen m
