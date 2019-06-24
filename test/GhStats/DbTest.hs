@@ -347,6 +347,7 @@ genVC =
   <*> genCount
   <*> genUniques
   <*> genId
+  <*> genName
 
 genCount ::
   MonadGen m

@@ -20,7 +20,7 @@ import           Data.Foldable                (Foldable, toList)
 import           Data.Proxy                   (Proxy (Proxy))
 import qualified Data.Text                    as T
 import           Database.SQLite.Simple       (Connection, FromRow, Only (Only),
-                                               Query, ToRow, execute,
+                                               Query (Query), ToRow, execute,
                                                executeMany, execute_,
                                                lastInsertRowId, query)
 import           Database.SQLite.SimpleErrors (runDBAction)
@@ -47,8 +47,9 @@ initDb ::
 initDb =
   let
     enableForeignKeys = "PRAGMA foreign_keys = ON;"
-    qRepos = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @RepoStats, " "
+    toQ = Query . T.intercalate "\n"
+    qRepos = toQ [
+        "CREATE TABLE IF NOT EXISTS ", tableName @RepoStats, " "
       , "( id INTEGER PRIMARY KEY"
       , ", name TEXT NOT NULL"
       , ", timestamp TEXT NOT NULL"
@@ -60,7 +61,7 @@ initDb =
       , ", unique_clones INTEGER NOT NULL" -- unique_clones over the last 14 days
       , ")"
       ]
-    qPop tn = mconcat [
+    qPop tn = toQ [
         "CREATE TABLE IF NOT EXISTS ", tn, " "
       , "( id INTEGER PRIMARY KEY"
       , ", position INTEGER NOT NULL"
@@ -68,28 +69,54 @@ initDb =
       , ", count INTEGER NOT NULL"
       , ", uniques INTEGER NOT NULL"
       , ", repo_id INTEGER NOT NULL"
-      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableNameQ @RepoStats <> "(id)"
+      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableName @RepoStats <> "(id)"
       , ", UNIQUE (position, repo_id)"
       , ", UNIQUE (name, repo_id)"
       , ")"
       ]
-    qVC tn = mconcat [
+    qVC tn = toQ [
         "CREATE TABLE IF NOT EXISTS ", tn, " "
       , "( id INTEGER PRIMARY KEY"
       , ", timestamp TEXT NOT NULL"
       , ", count INTEGER NOT NULL"
       , ", uniques INTEGER NTO NULL"
       , ", repo_id INTEGER NOT NULL"
-      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableNameQ @RepoStats <> "(id)"
+      , ", repo_name TEXT NOT NULL"
+      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableName @RepoStats <> "(id)"
+      , ", UNIQUE (timestamp, repo_id)"
+      , ", UNIQUE (timestamp, repo_name)"
       , ")"
       ]
-    qReferrer = qPop $ tableNameQ @GH.Referrer
-    qPaths = qPop $ tableNameQ @GH.PopularPath
-    qViews = qVC $ tableNameQ @GH.Views
-    qClones = qVC $ tableNameQ @GH.Clones
+    qRepoNameTrigger tn = toQ [
+        "CREATE TRIGGER " <> tn <> "_repo_name"
+      , "BEFORE INSERT ON " <> tn
+      , "BEGIN"
+      , "  SELECT RAISE(FAIL, 'repo name not valid')"
+      , "  FROM " <> tn
+      , "  WHERE repo_name <> ("
+      , "    SELECT name FROM " <> tableName @RepoStats
+      , "    WHERE id = repo_id"
+      , "  );"
+      , "END"
+      ]
+    qReferrer = qPop $ tableName @GH.Referrer
+    qPaths = qPop $ tableName @GH.PopularPath
+    qViews = qVC $ tableName @GH.Views
+    qClones = qVC $ tableName @GH.Clones
+    qViewsRepoNameCheck = qRepoNameTrigger $ tableName @GH.Views
+    qClonesRepoNameCheck = qRepoNameTrigger $ tableName @GH.Clones
   in
     withConn $ \conn -> liftIO . void $
-      traverse (execute_ conn) [enableForeignKeys, qRepos, qReferrer, qPaths, qViews, qClones]
+      traverse (execute_ conn) [
+        enableForeignKeys
+      , qRepos
+      , qReferrer
+      , qPaths
+      , qViews
+      , qClones
+      , qViewsRepoNameCheck
+      , qClonesRepoNameCheck
+      ]
 
 addToDb ::
   ( DbConstraints e r m
@@ -291,8 +318,8 @@ insertVC ::
   -> m (Id a)
 insertVC =
   let
-    q =  "INSERT INTO " <> tableNameQ @a <> " (timestamp, count, uniques, repo_id) "
-      <> "VALUES (?,?,?,?)"
+    q =  "INSERT INTO " <> tableNameQ @a <> " (timestamp, count, uniques, repo_id, repo_name) "
+      <> "VALUES (?,?,?,?,?)"
   in
     fmap unwrapId . insert q
 
@@ -306,7 +333,7 @@ selectVC ::
   -> m (Maybe (VC a))
 selectVC idee =
   let
-    q =  "SELECT id, timestamp, count, uniques, repo_id "
+    q =  "SELECT id, timestamp, count, uniques, repo_id, repo_name "
       <> "FROM " <> tableNameQ @a <> " "
       <> "WHERE id = ?"
   in

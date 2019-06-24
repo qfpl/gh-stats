@@ -15,7 +15,7 @@ import           Data.Time.Clock                  (UTCTime)
 import           Database.SQLite.Simple           (Query (Query), ToRow (toRow),
                                                    field)
 import           Database.SQLite.Simple.FromField (FromField)
-import           Database.SQLite.Simple.FromRow   (FromRow (fromRow))
+import           Database.SQLite.Simple.FromRow   (FromRow (fromRow), RowParser)
 import           Database.SQLite.Simple.ToField   (ToField)
 import           GhStats.Types                    (Forks, RepoStats, Stars)
 import qualified GitHub                           as GH
@@ -73,10 +73,8 @@ instance ToRow DbRepoStats where
 
 instance FromRow DbRepoStats where
   fromRow =
-    let
-      nameField = GH.mkName (Proxy :: Proxy GH.Repo) <$> field
-    in
-      DbRepoStats <$> field <*> nameField <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+    DbRepoStats <$> field <*> nameField <*> field <*> field <*> field <*> field <*> field <*> field
+      <*> field
 
 data Pop a =
   Pop {
@@ -98,10 +96,7 @@ instance ToRow (Pop a) where
 
 instance FromRow (Pop a) where
   fromRow =
-    let
-      nameField = GH.mkName (Proxy :: Proxy a) <$> field
-    in
-      Pop <$> field <*> field <*> nameField <*> field <*> field <*> field
+    Pop <$> field <*> field <*> nameField <*> field <*> field <*> field
 
 instance HasTable GH.PopularPath where
   tableName = "paths"
@@ -113,6 +108,7 @@ data VC a =
   , _vcCount     :: !(Count a)
   , _vcUniques   :: !(Uniques a)
   , _vcRepoId    :: !(Id DbRepoStats)
+  , _vcRepoName  :: !(GH.Name GH.Repo)
   }
   deriving (Eq, Show)
 
@@ -127,12 +123,15 @@ instance HasTable GH.Clones where
 
 instance ToRow (VC a) where
   toRow VC{..} =
-    toRow (_vcTimestamp, _vcCount, _vcUniques, _vcRepoId)
+    toRow (_vcTimestamp, _vcCount, _vcUniques, _vcRepoId, GH.untagName _vcRepoName)
 
 instance FromRow (VC a) where
   fromRow =
-    VC <$> field <*> field <*> field <*> field <*> field
+    VC <$> field <*> field <*> field <*> field <*> field <*> nameField
 
+nameField ::
+  RowParser (GH.Name a)
+nameField = GH.mkName (Proxy :: Proxy a) <$> field
 -- data DbClone =
 --   DbClone
 --   { _dbCloneId        :: !(Maybe (Id DbClone))
