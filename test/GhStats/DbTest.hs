@@ -24,7 +24,7 @@ import           Data.Time                          (UTCTime (UTCTime),
                                                      fromGregorian,
                                                      secondsToDiffTime)
 import           Database.SQLite.Simple             (Connection, execute_)
-import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError))
+import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError, SQLOtherError))
 import qualified GitHub                             as GH
 
 import           Hedgehog                           (Gen, GenT, MonadGen,
@@ -44,7 +44,7 @@ import           GhStats.Db                         (initDb, insertPop,
                                                      insertPops,
                                                      insertReferrers,
                                                      insertRepoStats, insertVC,
-                                                     selectPop,
+                                                     insertViews, selectPop,
                                                      selectPopsForRepoStats,
                                                      selectRepoStats, selectVC,
                                                      toDbPath, toDbPops,
@@ -80,7 +80,6 @@ testDb conn =
   , ("No repo for referrer fails", testNonExistentRepo)
   , ("View round trip", testViewRoundTrip)
   , ("Clone round trip", testClonesRoundTrip)
-  -- TODO: ensure the repo_name consistency check works (it doesn't right now!)
   , ("repo_name consistency check", testRepoNameTrigger)
   ]
   where
@@ -150,18 +149,35 @@ testNonExistentRepo conn = do
   ref <- forAllT genPop
   resetDb conn
   eRefId <- hoozit conn $ insertPop ref
-  liftIO $ checkResult eRefId
+  checkResult eRefId
   where
     checkResult ::
       Either Error (Id GH.Referrer)
-      -> IO ()
+      -> PropertyT IO ()
     checkResult =
       either assertIsConstraintError (const err)
     err = error "Expected failure due to foreign key constraint"
-    assertIsConstraintError :: Error -> IO ()
     assertIsConstraintError e = case e of
-      SQLiteError (SQLConstraintError _ _) -> pure ()
+      SQLiteError (SQLConstraintError _ _) -> success
       e'                                   -> throw e'
+
+testRepoNameTrigger ::
+  Connection
+  -> PropertyT IO ()
+testRepoNameTrigger conn = do
+  rs <- forAll genDbRepoStats
+  viewsNoRsId <- forAll genVC
+  resetDb conn
+  drsId <- evalEither <=< hoozit conn $ insertRepoStats rs
+  let views = viewsNoRsId {_vcRepoId = drsId}
+  evId <- hoozit conn $ insertViews views
+  either checkIsOtherError bad evId
+  where
+    bad =
+      error "Expected failure due to trigger on insert --- repo name not found in repos"
+    checkIsOtherError e = case e of
+      SQLiteError soe@(SQLOtherError _) -> success
+      e'                                -> throw e'
 
 testViewRoundTrip ::
   Connection
