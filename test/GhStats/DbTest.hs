@@ -80,6 +80,8 @@ testDb conn =
   , ("No repo for referrer fails", testNonExistentRepo)
   , ("View round trip", testViewRoundTrip)
   , ("Clone round trip", testClonesRoundTrip)
+  -- TODO: ensure the repo_name consistency check works (it doesn't right now!)
+  , ("repo_name consistency check", testRepoNameTrigger)
   ]
   where
     mkProp (name, prop) =
