@@ -46,7 +46,7 @@ import           GhStats.Db                         (initDb, insertPop,
                                                      insertVC, selectPop,
                                                      selectReferrersForRepoStats,
                                                      selectRepoStats,
-                                                     selectVC, toDbReferrers)
+                                                     selectVC, toDbReferrer, toDbPops)
 import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
                                                      VC (VC, _vcId, _vcRepoId),
                                                      HasTable (tableName, tableNameQ),
@@ -116,7 +116,7 @@ testReferrersRoundTrip conn = do
   resetDb conn
   drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
   let
-    dbRefsExpected = toDbReferrers drsId refs
+    dbRefsExpected = toDbPops (toDbReferrer drsId) refs
   (evalEither =<<) . hoozit conn $ insertReferrers drsId refs
   dbRefsActual <- (evalEither =<<) . hoozit conn $ selectReferrersForRepoStats drsId
   dbReferrersEqual dbRefsExpected dbRefsActual

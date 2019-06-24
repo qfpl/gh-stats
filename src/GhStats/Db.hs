@@ -17,18 +17,20 @@ import           Control.Monad.Except         (MonadError)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import           Control.Monad.Reader         (MonadReader, ask)
 import           Data.Foldable                (Foldable, toList)
+import           Data.Proxy                   (Proxy (Proxy))
 import qualified Data.Text                    as T
 import           Database.SQLite.Simple       (Connection, FromRow, Only (Only),
                                                Query, ToRow, execute,
                                                executeMany, execute_,
                                                lastInsertRowId, query)
 import           Database.SQLite.SimpleErrors (runDBAction)
-import qualified          GitHub as GH
+import qualified GitHub                       as GH
 
 import           GhStats.Db.Types
 import           GhStats.Types                (AsError (_TooManyResults), AsSQLiteResponse (_SQLiteResponse),
                                                HasConnection (connection),
                                                RepoStats (..),
+                                               repoStatsPopularPaths,
                                                repoStatsPopularReferrers)
 
 type DbConstraints e r m =
@@ -105,7 +107,7 @@ insertRepoStatsTree ::
 insertRepoStatsTree rs = do
   rsId <- insertRepoStats $ toDbRepoStats rs
   insertReferrers rsId $ rs ^. repoStatsPopularReferrers
-  -- insertPaths rsId $ repoStats ^. repoStatsPopularPaths
+  insertPaths rsId $ rs ^. repoStatsPopularPaths
   pure rsId
 
 insertRepoStats ::
@@ -154,24 +156,63 @@ insertReferrers ::
   => Id DbRepoStats
   -> t GH.Referrer
   -> m ()
-insertReferrers rsId refs =
-  withConn $ \conn ->
-    liftIO . executeMany conn (insertPopQ $ tableNameQ @GH.Referrer) . toDbReferrers rsId $ refs
+insertReferrers =
+  insertPops . toDbReferrer
 
-toDbReferrers ::
-  ( Foldable t
+toDbReferrer ::
+  Id DbRepoStats
+  -> Position GH.Referrer
+  -> GH.Referrer
+  -> Pop GH.Referrer
+toDbReferrer rsId i GH.Referrer{GH.referrer, GH.referrerCount, GH.referrerUniques} =
+  Pop Nothing i referrer (Count referrerCount) (Uniques referrerUniques) rsId
+
+insertPaths ::
+  ( DbConstraints e r m
+  , Foldable t
   , FunctorWithIndex Int t
   , TraversableWithIndex Int t
   )
   => Id DbRepoStats
-  -> t GH.Referrer
-  -> [Pop GH.Referrer]
-toDbReferrers rsId =
-  let
-    toDbReferrer i GH.Referrer{GH.referrer, GH.referrerCount, GH.referrerUniques} =
-      Pop Nothing i referrer (Count referrerCount) (Uniques referrerUniques) rsId
-  in
-    imap (toDbReferrer . Position . succ) . toList
+  -> t GH.PopularPath
+  -> m ()
+insertPaths =
+  insertPops . toDbPath
+
+toDbPath ::
+  Id DbRepoStats
+  -> Position GH.PopularPath
+  -> GH.PopularPath
+  -> Pop GH.PopularPath
+toDbPath rsId i GH.PopularPath{GH.popularPath, GH.popularPathCount, GH.popularPathUniques} =
+  Pop Nothing i (GH.mkName (Proxy :: Proxy GH.PopularPath) popularPath) (Count popularPathCount)
+      (Uniques popularPathUniques) rsId
+
+toDbPops ::
+  ( Foldable t
+  , FunctorWithIndex Int t
+  , TraversableWithIndex Int t
+  )
+  => (Position a -> a -> Pop a)
+  -> t a
+  -> [Pop a]
+toDbPops toDbPop =
+  imap (toDbPop . Position . succ) . toList
+
+insertPops ::
+  forall a e r m t.
+  ( DbConstraints e r m
+  , Foldable t
+  , FunctorWithIndex Int t
+  , TraversableWithIndex Int t
+  , HasTable a
+  )
+  => (Position a -> a -> Pop a)
+  -> t a
+  -> m ()
+insertPops toDbPop pops =
+  withConn $ \conn ->
+    liftIO . executeMany conn (insertPopQ $ tableNameQ @a) . toDbPops toDbPop $ pops
 
 selectReferrersForRepoStats ::
   DbConstraints e r m
