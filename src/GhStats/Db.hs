@@ -71,18 +71,8 @@ initDb =
       , ", UNIQUE (name, repo_id)"
       , ")"
       ]
-    qViews = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbView, " "
-      , "( id INTEGER PRIMARY KEY"
-      , ", timestamp TEXT NOT NULL"
-      , ", count INTEGER NOT NULL"
-      , ", uniques INTEGER NTO NULL"
-      , ", repo_id INTEGER NOT NULL"
-      , ", FOREIGN KEY(repo_id) REFERENCES " <> tableNameQ @RepoStats <> "(id)"
-      , ")"
-      ]
-    qClones = mconcat [
-        "CREATE TABLE IF NOT EXISTS ", tableNameQ @DbClone, " "
+    qVC tn = mconcat [
+        "CREATE TABLE IF NOT EXISTS ", tn, " "
       , "( id INTEGER PRIMARY KEY"
       , ", timestamp TEXT NOT NULL"
       , ", count INTEGER NOT NULL"
@@ -93,6 +83,8 @@ initDb =
       ]
     qReferrer = qPop $ tableNameQ @GH.Referrer
     qPaths = qPop $ tableNameQ @GH.PopularPath
+    qViews = qVC $ tableNameQ @GH.Views
+    qClones = qVC $ tableNameQ @GH.Clones
   in
     withConn $ \conn -> liftIO . void $
       traverse (execute_ conn) [enableForeignKeys, qRepos, qReferrer, qPaths, qViews, qClones]
@@ -127,16 +119,16 @@ insertRepoStats =
     insert $
       "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks, views, unique_views, clones, unique_clones) VALUES (?,?,?,?,?,?,?,?)"
 
-fromPopId ::
-  Id (Pop a)
+unwrapId ::
+  Id (f a)
   -> Id a
-fromPopId (Id i) =
+unwrapId (Id i) =
   Id i
 
-toPopId ::
+wrapId ::
   Id a
-  -> Id (Pop a)
-toPopId (Id i) =
+  -> Id (f a)
+wrapId (Id i) =
   Id i
 
 selectRepoStats ::
@@ -189,6 +181,22 @@ selectReferrersForRepoStats i =
   withConn $ \conn ->
     runDb $ query conn (selectPopQ @GH.Referrer <> " WHERE repo_id = ? ORDER BY position") (Only i)
 
+insertViews ::
+  DbConstraints e r m
+  => VC GH.Views
+  -> m (Id GH.Views)
+insertViews =
+  insertVC
+
+selectViews ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => Id GH.Views
+  -> m (Maybe (VC GH.Views))
+selectViews =
+  selectVC
+
 insertPopQ ::
   Query
   -> Query
@@ -217,7 +225,7 @@ insertPop ::
   => Pop a
   -> m (Id a)
 insertPop =
-  fmap fromPopId . insert (insertPopQ $ tableNameQ @a)
+  fmap unwrapId . insert (insertPopQ $ tableNameQ @a)
 
 selectPop ::
   forall e r m a.
@@ -228,32 +236,37 @@ selectPop ::
   => Id a
   -> m (Maybe (Pop a))
 selectPop idee =
-  selectById (selectPopByIdQ @a) $ toPopId idee
+  selectById (selectPopByIdQ @a) $ wrapId idee
 
-insertView ::
-  DbConstraints e r m
-  => DbView
-  -> m (Id DbView)
-insertView =
+insertVC ::
+  forall a e r m.
+  ( DbConstraints e r m
+  , HasTable a
+  )
+  => VC a
+  -> m (Id a)
+insertVC =
   let
-    q =  "INSERT INTO " <> tableNameQ @DbView <> " (timestamp, count, uniques, repo_id) "
+    q =  "INSERT INTO " <> tableNameQ @a <> " (timestamp, count, uniques, repo_id) "
       <> "VALUES (?,?,?,?)"
   in
-    insert q
+    fmap unwrapId . insert q
 
-selectView ::
+selectVC ::
+  forall e r m a.
   ( DbConstraints e r m
   , AsError e
+  , HasTable a
   )
-  => Id DbView
-  -> m (Maybe DbView)
-selectView =
+  => Id a
+  -> m (Maybe (VC a))
+selectVC idee =
   let
     q =  "SELECT id, timestamp, count, uniques, repo_id "
-      <> "FROM " <> tableNameQ @DbView <> " "
+      <> "FROM " <> tableNameQ @a <> " "
       <> "WHERE id = ?"
   in
-    selectById q
+    selectById q $ wrapId idee
 
 selectById ::
   forall e r m a.

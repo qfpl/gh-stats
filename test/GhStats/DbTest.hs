@@ -43,12 +43,12 @@ import           Test.Tasty.Hedgehog                (testProperty)
 import           GhStats.Db                         (initDb, insertPop,
                                                      insertReferrers,
                                                      insertRepoStats,
-                                                     insertView, selectPop,
+                                                     insertViews, selectPop,
                                                      selectReferrersForRepoStats,
                                                      selectRepoStats,
-                                                     selectView, toDbReferrers)
+                                                     selectViews, toDbReferrers)
 import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
-                                                     DbView (DbView, _dbViewId, _dbViewRepoId),
+                                                     VC (VC, _vcId, _vcRepoId),
                                                      HasTable (tableName, tableNameQ),
                                                      Id (Id),
                                                      Pop (Pop, popId, popRepoId),
@@ -76,6 +76,7 @@ testDb conn =
   , ("Referrers round trip", testReferrersRoundTrip)
   , ("No repo for referrer fails", testNonExistentRepo)
   , ("View round trip", testViewRoundTrip)
+  -- , ("Clone round trip", testCloneRoundTrip)
   ]
   where
     mkProp (name, prop) =
@@ -145,13 +146,13 @@ testViewRoundTrip ::
   -> PropertyT IO ()
 testViewRoundTrip conn = do
   drs <- forAllT genDbRepoStats
-  dbViewBadId <- forAllT genDbView
+  dbViewBadId <- forAllT genVC
   resetDb conn
   drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
-  let dbView = dbViewBadId {_dbViewRepoId = drsId}
-  dvId <- (evalEither =<<) . hoozit conn $ insertView dbView
-  let dbViewExpected = dbView {_dbViewId = Just dvId}
-  dbViewSelected <- (evalEither =<<) . hoozit conn $ selectView dvId
+  let dbView = dbViewBadId {_vcRepoId = drsId}
+  dvId <- (evalEither =<<) . hoozit conn $ insertViews dbView
+  let dbViewExpected = dbView {_vcId = Just dvId}
+  dbViewSelected <- (evalEither =<<) . hoozit conn $ selectViews dvId
   Just dbViewExpected === dbViewSelected
 
 resetDb ::
@@ -160,7 +161,8 @@ resetDb ::
   -> m ()
 resetDb conn =
   liftIO $ traverse_ (execute_ conn . ("DELETE FROM " <>)) [
-      tableNameQ @DbView
+      tableNameQ @GH.Views
+    , tableNameQ @GH.Clones
     , tableNameQ @GH.Referrer
     , tableNameQ @GH.PopularPath
     , tableNameQ @DbRepoStats
@@ -285,11 +287,11 @@ genPop =
   <*> genUniques
   <*> genId
 
-genDbView ::
+genVC ::
   MonadGen m
-  => m DbView
-genDbView =
-  DbView Nothing
+  => m (VC a)
+genVC =
+  VC Nothing
   <$> genUTCTime
   <*> genCount
   <*> genUniques

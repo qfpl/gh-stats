@@ -106,44 +106,50 @@ instance FromRow (Pop a) where
 instance HasTable GH.PopularPath where
   tableName = "paths"
 
-data DbView =
-  DbView
-  { _dbViewId        :: !(Maybe (Id DbView))
-  , _dbViewTimestamp :: !UTCTime
-  , _dbViewCount     :: !(Count DbView)
-  , _dbViewUniques   :: !(Uniques DbView)
-  , _dbViewRepoId    :: !(Id DbRepoStats)
+data VC a =
+  VC
+  { _vcId        :: !(Maybe (Id a))
+  , _vcTimestamp :: !UTCTime
+  , _vcCount     :: !(Count a)
+  , _vcUniques   :: !(Uniques a)
+  , _vcRepoId    :: !(Id DbRepoStats)
   }
   deriving (Eq, Show)
 
-instance HasTable DbView where
+instance HasTable a => HasTable (VC a) where
+  tableName = tableName @a
+
+instance HasTable GH.Views where
   tableName = "views"
 
-instance ToRow DbView where
-  toRow DbView{..} =
-    toRow (_dbViewTimestamp, _dbViewCount, _dbViewUniques, _dbViewRepoId)
-
-instance FromRow DbView where
-  fromRow =
-    DbView <$> field <*> field <*> field <*> field <*> field
-
-data DbClone =
-  DbClone
-  { _dbCloneId        :: !(Maybe (Id DbClone))
-  , _dbCloneTimestamp :: !UTCTime
-  , _dbCloneCount     :: !(Count DbClone)
-  , _dbCloneUniques   :: !(Uniques DbClone)
-  , _dbCloneRepoId    :: !(Id DbRepoStats)
-  }
-  deriving (Eq, Show)
-
-instance HasTable DbClone where
+instance HasTable GH.Clones where
   tableName = "clones"
 
-instance ToRow DbClone where
-  toRow DbClone{..} =
-    toRow (_dbCloneTimestamp, _dbCloneCount, _dbCloneUniques, _dbCloneRepoId)
+instance ToRow (VC a) where
+  toRow VC{..} =
+    toRow (_vcTimestamp, _vcCount, _vcUniques, _vcRepoId)
 
-instance FromRow DbClone where
+instance FromRow (VC a) where
   fromRow =
-    DbClone <$> field <*> field <*> field <*> field <*> field
+    VC <$> field <*> field <*> field <*> field <*> field
+
+-- data DbClone =
+--   DbClone
+--   { _dbCloneId        :: !(Maybe (Id DbClone))
+--   , _dbCloneTimestamp :: !UTCTime
+--   , _dbCloneCount     :: !(Count DbClone)
+--   , _dbCloneUniques   :: !(Uniques DbClone)
+--   , _dbCloneRepoId    :: !(Id DbRepoStats)
+--   }
+--   deriving (Eq, Show)
+
+-- instance HasTable DbClone where
+--   tableName = "clones"
+
+-- instance ToRow DbClone where
+--   toRow DbClone{..} =
+--     toRow (_dbCloneTimestamp, _dbCloneCount, _dbCloneUniques, _dbCloneRepoId)
+
+-- instance FromRow DbClone where
+--   fromRow =
+--     DbClone <$> field <*> field <*> field <*> field <*> field
