@@ -47,7 +47,8 @@ import           GhStats.Db                         (initDb, insertPop,
                                                      selectPop,
                                                      selectPopsForRepoStats,
                                                      selectRepoStats, selectVC,
-                                                     toDbPops, toDbReferrer)
+                                                     toDbPath, toDbPops,
+                                                     toDbReferrer)
 import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId),
                                                      HasTable (tableName, tableNameQ),
                                                      Id (Id),
@@ -73,8 +74,9 @@ testDb conn =
   testGroup "GhStats.Db" . fmap mkProp $ [
     ("DbRepoStats round trip", testRepoStatsRoundTrip)
   , ("Referrer round trip", testReferrerRoundTrip)
-  , ("Path round trip", testPathRoundTrip)
   , ("Referrers round trip", testReferrersRoundTrip)
+  , ("Path round trip", testPathRoundTrip)
+  , ("Paths round trip", testPathsRoundTrip)
   , ("No repo for referrer fails", testNonExistentRepo)
   , ("View round trip", testViewRoundTrip)
   , ("Clone round trip", testClonesRoundTrip)
@@ -113,6 +115,12 @@ testReferrersRoundTrip ::
   -> PropertyT IO ()
 testReferrersRoundTrip =
   testPopsRoundTrip genReferrers toDbReferrer
+
+testPathsRoundTrip ::
+  Connection
+  -> PropertyT IO ()
+testPathsRoundTrip =
+  testPopsRoundTrip genPaths toDbPath
 
 testPopsRoundTrip ::
   ( Show a
