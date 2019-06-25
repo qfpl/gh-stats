@@ -23,6 +23,7 @@ import           Data.Text                          (Text)
 import           Data.Time                          (UTCTime (UTCTime),
                                                      fromGregorian,
                                                      secondsToDiffTime)
+import qualified Data.Vector                        as V
 import           Database.SQLite.Simple             (Connection, execute_)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError, SQLOtherError))
 import qualified GitHub                             as GH
@@ -40,13 +41,14 @@ import           Test.Tasty                         (TestName, TestTree,
                                                      testGroup)
 import           Test.Tasty.Hedgehog                (testProperty)
 
-import           GhStats.Db                         (initDb, insertPop, selectViewsForRepoId,
+import           GhStats.Db                         (initDb, insertPop,
                                                      insertPops,
                                                      insertReferrers,
                                                      insertRepoStats, insertVC,
                                                      insertViews, selectPop,
                                                      selectPopsForRepoStats,
                                                      selectRepoStats, selectVC,
+                                                     selectViewsForRepoId,
                                                      toDbPath, toDbPops,
                                                      toDbReferrer)
 import           GhStats.Db.Types                   (DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
@@ -55,7 +57,8 @@ import           GhStats.Db.Types                   (DbRepoStats (DbRepoStats, _
                                                      Pop (Pop, popId, popRepoId),
                                                      Position (Position),
                                                      VC (VC, _vcId, _vcRepoId, _vcRepoName))
-import           GhStats.Types                      (AsSQLiteResponse, Count (Count),
+import           GhStats.Types                      (AsSQLiteResponse,
+                                                     Count (Count),
                                                      Error (SQLiteError),
                                                      Forks (..),
                                                      GhStatsM (GhStatsM),
@@ -64,10 +67,10 @@ import           GhStats.Types                      (AsSQLiteResponse, Count (Co
                                                      Uniques (Uniques),
                                                      runGhStatsM)
 
+import           GhStats.Gens
 import           GhStats.Test                       (GhStatsPropReaderT,
                                                      GhStatsPropertyT,
                                                      runGhStatsPropertyT)
-import GhStats.Gens
 
 testDb ::
   Connection
@@ -84,6 +87,7 @@ testDb conn =
   , ("Clone round trip", testClonesRoundTrip)
   , ("repo_name consistency check", testRepoNameTrigger)
   , ("insertViews is idempotent", testInsertViewsIdempotency)
+  , ("insertViews only inserts new", testInsertViewsOnlyInsertsNew)
   ]
   where
     mkProp (name, prop) =
@@ -222,6 +226,24 @@ testInsertViewsIdempotency conn = do
   drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
   let ins = evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
   sequence_ [ins,ins]
+  dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
+  length dbViews === length (GH.views vs)
+
+testInsertViewsOnlyInsertsNew ::
+  Connection
+  -> PropertyT IO ()
+testInsertViewsOnlyInsertsNew conn = do
+  drs <- forAll genDbRepoStats
+  vs <- forAll genGhViews
+  n <- forAll $ Gen.int (Range.constant 0 5)
+  resetDb conn
+
+  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
+  let
+    ins vs' = evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs'
+    tcvs1 = V.take n $ GH.views vs
+    vs1 = vs {GH.views = tcvs1}
+  sequence_ [ins vs1, ins vs]
   dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
   length dbViews === length (GH.views vs)
 
