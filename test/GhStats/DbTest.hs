@@ -49,19 +49,20 @@ import           GhStats.Db                         (initDb, insertPop,
                                                      selectRepoStats, selectVC,
                                                      toDbPath, toDbPops,
                                                      toDbReferrer)
-import           GhStats.Db.Types                   (Count (Count), DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
+import           GhStats.Db.Types                   (DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
                                                      HasTable (tableName, tableNameQ),
                                                      Id (Id),
                                                      Pop (Pop, popId, popRepoId),
                                                      Position (Position),
-                                                     Uniques (Uniques),
                                                      VC (VC, _vcId, _vcRepoId, _vcRepoName))
-import           GhStats.Types                      (AsSQLiteResponse,
+import           GhStats.Types                      (AsSQLiteResponse, Count (Count),
                                                      Error (SQLiteError),
                                                      Forks (..),
                                                      GhStatsM (GhStatsM),
                                                      HasConnection, RepoStats,
-                                                     Stars (..), runGhStatsM)
+                                                     Stars (..),
+                                                     Uniques (Uniques),
+                                                     runGhStatsM)
 
 import           GhStats.Test                       (GhStatsPropReaderT,
                                                      GhStatsPropertyT,
@@ -170,7 +171,7 @@ testRepoNameTrigger conn = do
   resetDb conn
   drsId <- evalEither <=< hoozit conn $ insertRepoStats rs
   let views = viewsNoRsId {_vcRepoId = drsId}
-  evId <- hoozit conn $ insertViews views
+  evId <- hoozit conn $ insertVC @GH.Views views
   either checkIsOtherError bad evId
   where
     bad =

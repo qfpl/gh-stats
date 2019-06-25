@@ -44,6 +44,18 @@ runGhStatsM ::
 runGhStatsM conn (GhStatsM m) =
   fmap (either throw id) . runExceptT . runReaderT m $ conn
 
+newtype Count a = Count Int
+  deriving (Eq, Show, FromField, ToField)
+
+newtype Uniques a = Uniques Int
+  deriving (Eq, Show, FromField, ToField)
+
+newtype Views = Views Int
+  deriving (Eq, Show, FromField, ToField)
+
+newtype Clones = Clones Int
+  deriving (Eq, Show, FromField, ToField)
+
 class HasConnection s where
   connection :: Lens' s Connection
 
@@ -54,6 +66,18 @@ data Error =
   SQLiteError SQLiteResponse
   | GithubError GH.Error
   | TooManyResults Text
+  | ConflictingViewData [CVD]
+  deriving (Show)
+
+data CVD =
+  CVD {
+    cvdName             :: GH.Name GH.Repo
+  , cvdTimestamp        :: UTCTime
+  , cvdExistingCount    :: Count GH.Views
+  , cvdExistingExisting :: Uniques GH.Views
+  , cvdNewCount         :: Count GH.Views
+  , cvdNewUniques       :: Uniques GH.Views
+  }
   deriving (Show)
 
 makeClassyPrisms ''Error

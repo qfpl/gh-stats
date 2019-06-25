@@ -1,7 +1,7 @@
 { mkDerivation, base, bytestring, containers, directory, github
 , hedgehog, http-client, lens, mmorph, mtl, optparse-applicative
 , sqlite-simple, sqlite-simple-errors, stdenv, sv, tasty
-, tasty-hedgehog, text, time, vector
+, tasty-hedgehog, text, time, validation, vector
 }:
 mkDerivation {
   pname = "gh-stats";
@@ -10,8 +10,9 @@ mkDerivation {
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
-    base bytestring github http-client lens mtl optparse-applicative
-    sqlite-simple sqlite-simple-errors sv text time vector
+    base bytestring containers github http-client lens mtl
+    optparse-applicative sqlite-simple sqlite-simple-errors sv text
+    time validation vector
   ];
   executableHaskellDepends = [ base ];
   testHaskellDepends = [

@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -16,9 +17,17 @@ import           Control.Monad.Error.Lens     (throwing)
 import           Control.Monad.Except         (MonadError)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import           Control.Monad.Reader         (MonadReader, ask)
+import           Data.Bool                    (bool)
 import           Data.Foldable                (Foldable, toList)
+import           Data.List.NonEmpty           (NonEmpty)
+import qualified Data.List.NonEmpty           as NE
+import qualified Data.Map.Merge.Strict        as M
+import           Data.Map.Strict              (Map)
+import qualified Data.Map.Strict              as M
 import           Data.Proxy                   (Proxy (Proxy))
 import qualified Data.Text                    as T
+import           Data.Time.Clock              (UTCTime)
+import qualified Data.Validation              as V
 import           Database.SQLite.Simple       (Connection, FromRow, Only (Only),
                                                Query (Query), ToRow, execute,
                                                executeMany, execute_,
@@ -27,11 +36,16 @@ import           Database.SQLite.SimpleErrors (runDBAction)
 import qualified GitHub                       as GH
 
 import           GhStats.Db.Types
-import           GhStats.Types                (AsError (_TooManyResults), AsSQLiteResponse (_SQLiteResponse),
+import           GhStats.Types                (AsError (_ConflictingViewData, _TooManyResults),
+                                               AsSQLiteResponse (_SQLiteResponse),
+                                               CVD (CVD), Count (Count),
                                                HasConnection (connection),
                                                RepoStats (..),
+                                               Uniques (Uniques),
+                                               repoStatsName,
                                                repoStatsPopularPaths,
-                                               repoStatsPopularReferrers)
+                                               repoStatsPopularReferrers,
+                                               repoStatsViews)
 
 type DbConstraints e r m =
   ( MonadReader r m
@@ -106,7 +120,7 @@ initDb =
     qViewsRepoNameCheck = qRepoNameTrigger $ tableName @GH.Views
     qClonesRepoNameCheck = qRepoNameTrigger $ tableName @GH.Clones
   in
-    withConn $ \conn -> liftIO . void $
+    withConnIO $ \conn -> void $
       traverse (execute_ conn) [
         enableForeignKeys
       , qRepos
@@ -121,6 +135,7 @@ initDb =
 addToDb ::
   ( DbConstraints e r m
   , Traversable t
+  , AsError e
   )
   => t RepoStats
   -> m ()
@@ -128,14 +143,92 @@ addToDb =
   void . traverse insertRepoStatsTree
 
 insertRepoStatsTree ::
-  DbConstraints e r m
+  ( DbConstraints e r m
+  , AsError e
+  )
   => RepoStats
   -> m (Id DbRepoStats)
 insertRepoStatsTree rs = do
   rsId <- insertRepoStats $ toDbRepoStats rs
   insertReferrers rsId $ rs ^. repoStatsPopularReferrers
   insertPaths rsId $ rs ^. repoStatsPopularPaths
+  insertViews rsId (rs ^. repoStatsName) (rs ^. repoStatsViews)
   pure rsId
+
+type ViewMap = Map (GH.Name GH.Repo, UTCTime) (Count GH.Views, Uniques GH.Views)
+
+insertViews ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => Id DbRepoStats
+  -> GH.Name GH.Repo
+  -> GH.Views
+  -> m ()
+insertViews rsId rsName =
+  maybe (pure ()) (insertViews' rsId rsName) . NE.nonEmpty . toList . GH.views
+
+insertViews' ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => Id DbRepoStats
+  -> GH.Name GH.Repo
+  -> NonEmpty (GH.TrafficCount 'GH.View)
+  -> m ()
+insertViews' rsId repoName tcvs = do
+  let
+    dateRange = findDateRange tcvs
+    toViewMapElem GH.TrafficCount{GH.trafficCountTimestamp, GH.trafficCount, GH.trafficCountUniques} =
+      ((repoName, trafficCountTimestamp), (Count trafficCount, Uniques trafficCountUniques))
+    new = M.fromList . NE.toList $ toViewMapElem <$> tcvs
+    alwaysSkip = M.filterAMissing $ \_ _ -> pure False
+    alwaysInsert = M.filterAMissing $ \_ _ -> pure True
+    liftToInsertMap = either (throwing _ConflictingViewData) pure . V.toEither
+    toInsertList = fmap (\((n,t),(c,u)) -> VC Nothing t c u rsId n) . M.toList
+  existing <- selectViewsBetweenDates dateRange repoName
+  insertMap <- liftToInsertMap $ M.mergeA alwaysSkip alwaysInsert checkOverlap existing new
+  let
+  withConnIO $ \conn ->
+    executeMany conn (insertVCQ (Proxy :: Proxy GH.Views)) . toInsertList $ insertMap
+
+checkOverlap ::
+  M.WhenMatched (V.Validation [CVD])
+                (GH.Name GH.Repo, UTCTime)
+                (Count GH.Views, Uniques GH.Views)
+                (Count GH.Views, Uniques GH.Views)
+                (Count GH.Views, Uniques GH.Views)
+checkOverlap =
+  M.zipWithMaybeAMatched $ \(n,t) (c1,u1) (c2,u2) ->
+    bool (V.Failure [CVD n t c1 u1 c2 u2])
+         (pure Nothing)
+         (c1 == c2 && u1 == u2)
+
+selectViewsBetweenDates ::
+  DbConstraints e r m
+  => (UTCTime, UTCTime)
+  -> GH.Name GH.Repo
+  -> m ViewMap
+selectViewsBetweenDates (start, end) repoName =
+  let
+    q =  "SELECT repo_name, timestamp, count, uniques "
+      <> "FROM views "
+      <> "WHERE repo_name = ? "
+      <> "AND timestamp BETWEEN ? AND ?"
+    mkName = GH.mkName (Proxy :: Proxy GH.Repo)
+    toViewMapElem (n,t,c,u) = ((mkName n, t), (c,u))
+  in
+    withConnIO $ \conn ->
+       M.fromList . (toViewMapElem <$>) <$> query conn q (GH.untagName repoName, start, end)
+
+findDateRange ::
+  NonEmpty (GH.TrafficCount 'GH.View)
+  -> (UTCTime, UTCTime)
+findDateRange views =
+  let
+    sorted = NE.sort . (GH.trafficCountTimestamp <$>) $ views
+  in
+    (NE.head sorted, NE.last sorted)
 
 insertRepoStats ::
   DbConstraints e r m
@@ -146,7 +239,8 @@ insertRepoStats =
     tnq = tableNameQ @RepoStats
   in
     insert $
-      "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks, views, unique_views, clones, unique_clones) VALUES (?,?,?,?,?,?,?,?)"
+      "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks, views, unique_views, clones, unique_clones) "
+      <> "VALUES (?,?,?,?,?,?,?,?)"
 
 unwrapId ::
   Id (f a)
@@ -169,7 +263,7 @@ selectRepoStats ::
 selectRepoStats i =
   let
     tnq = tableNameQ @RepoStats
-    q = "SELECT id, name, timestamp, stars, forks, views, unique_views, clones, unique_clones "
+    q =  "SELECT id, name, timestamp, stars, forks, views, unique_views, clones, unique_clones "
       <> "FROM " <> tnq <> " WHERE id = ?"
   in
     selectById q i
@@ -238,8 +332,8 @@ insertPops ::
   -> t a
   -> m ()
 insertPops toDbPop pops =
-  withConn $ \conn ->
-    liftIO . executeMany conn (insertPopQ $ tableNameQ @a) . toDbPops toDbPop $ pops
+  withConnIO $ \conn ->
+    executeMany conn (insertPopQ $ tableNameQ @a) . toDbPops toDbPop $ pops
 
 selectPopsForRepoStats ::
   forall a e r m.
@@ -249,15 +343,8 @@ selectPopsForRepoStats ::
   => Id DbRepoStats
   -> m [Pop a]
 selectPopsForRepoStats i =
-  withConn $ \conn ->
-    runDb $ query conn (selectPopQ @a <> " WHERE repo_id = ? ORDER BY position") (Only i)
-
-insertViews ::
-  DbConstraints e r m
-  => VC GH.Views
-  -> m (Id GH.Views)
-insertViews =
-  insertVC
+  withConnIO $ \conn ->
+    query conn (selectPopQ @a <> " WHERE repo_id = ? ORDER BY position") (Only i)
 
 selectViews ::
   ( DbConstraints e r m
@@ -317,11 +404,16 @@ insertVC ::
   => VC a
   -> m (Id a)
 insertVC =
-  let
-    q =  "INSERT INTO " <> tableNameQ @a <> " (timestamp, count, uniques, repo_id, repo_name) "
-      <> "VALUES (?,?,?,?,?)"
-  in
-    fmap unwrapId . insert q
+  fmap unwrapId . insert (insertVCQ (Proxy :: Proxy a))
+
+insertVCQ ::
+  forall a.
+  HasTable a
+  => Proxy a
+  -> Query
+insertVCQ _ =
+     "INSERT INTO " <> tableNameQ @a <> " (timestamp, count, uniques, repo_id, repo_name) "
+  <> "VALUES (?,?,?,?,?)"
 
 selectVC ::
   forall e r m a.
@@ -375,9 +467,9 @@ insert ::
   -> a
   -> m (Id a)
 insert q a =
-  withConn $ \conn -> do
-    runDb $ execute conn q a
-    runDb . fmap Id $ lastInsertRowId conn
+  withConnIO $ \conn -> do
+    execute conn q a
+    fmap Id $ lastInsertRowId conn
 
 withConn ::
   DbConstraints e r m
@@ -385,6 +477,13 @@ withConn ::
   -> m a
 withConn f =
   (f . view connection) =<< ask
+
+withConnIO ::
+  DbConstraints e r m
+  => (Connection -> IO a)
+  -> m a
+withConnIO f =
+  (runDb . f . view connection) =<< ask
 
 runDb ::
   ( MonadError e m

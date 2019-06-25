@@ -17,25 +17,15 @@ import           Database.SQLite.Simple           (Query (Query), ToRow (toRow),
 import           Database.SQLite.Simple.FromField (FromField)
 import           Database.SQLite.Simple.FromRow   (FromRow (fromRow), RowParser)
 import           Database.SQLite.Simple.ToField   (ToField)
-import           GhStats.Types                    (Forks, RepoStats, Stars)
+import           GhStats.Types                    (Clones, Count, Forks,
+                                                   RepoStats, Stars, Uniques,
+                                                   Views)
 import qualified GitHub                           as GH
 
 newtype Id a = Id Int64
   deriving (Eq, Show, FromField, ToField)
 
 newtype Position a = Position Int
-  deriving (Eq, Show, FromField, ToField)
-
-newtype Count a = Count Int
-  deriving (Eq, Show, FromField, ToField)
-
-newtype Uniques a = Uniques Int
-  deriving (Eq, Show, FromField, ToField)
-
-newtype Views = Views Int
-  deriving (Eq, Show, FromField, ToField)
-
-newtype Clones = Clones Int
   deriving (Eq, Show, FromField, ToField)
 
 class HasTable r where
