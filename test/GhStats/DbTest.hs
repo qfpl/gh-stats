@@ -67,6 +67,7 @@ import           GhStats.Types                      (AsSQLiteResponse, Count (Co
 import           GhStats.Test                       (GhStatsPropReaderT,
                                                      GhStatsPropertyT,
                                                      runGhStatsPropertyT)
+import GhStats.Gens
 
 testDb ::
   Connection
@@ -82,6 +83,7 @@ testDb conn =
   , ("View round trip", testViewRoundTrip)
   , ("Clone round trip", testClonesRoundTrip)
   , ("repo_name consistency check", testRepoNameTrigger)
+  --, ("insertViews is idempotent", testInsertViewsIdempotency)
   ]
   where
     mkProp (name, prop) =
@@ -209,6 +211,12 @@ testVCRoundTrip _ conn = do
   vcSelected <- (evalEither =<<) . hoozit conn $ selectVC vcId
   Just vcExpected === vcSelected
 
+-- testInsertViewsIdempotency ::
+--   Connection
+--   -> PropertyT IO ()
+-- testInsertViewsIdempotency conn = do
+--   undefined
+
 resetDb ::
   MonadIO m
   => Connection
@@ -255,141 +263,3 @@ hoozit ::
   -> PropertyT IO (Either Error a)
 hoozit conn (GhStatsM m)=
   liftIO . runExceptT $ runReaderT m conn
-
-genDbRepoStats ::
-   MonadGen m
-   => m DbRepoStats
-genDbRepoStats =
-  DbRepoStats
-  Nothing
-  <$> genName
-  <*> genUTCTime
-  <*> (Stars <$> genIntCount)
-  <*> (Forks <$> genIntCount)
-  <*> genCount
-  <*> genUniques
-  <*> genCount
-  <*> genUniques
-
-genId ::
-  MonadGen m
-  => m (Id a)
-genId =
-  Id <$> Gen.int64 Range.linearBounded
-
-genName ::
-  MonadGen m
-  => m (GH.Name a)
-genName =
-  -- TODO: should probably change this to `unicode` once hedgehog is updated
-  -- (https://github.com/hedgehogqa/haskell-hedgehog/pull/303).
-  GH.mkName (undefined :: GH.Name a) <$> Gen.text (Range.linear 1 30) Gen.ascii
-
-genUTCTime
-  :: MonadGen n
-  => n UTCTime
-genUTCTime =
-  let
-    gYear = Gen.int (Range.linearFrom 1900 1970 2500)
-    gMonth = Gen.int (Range.linear 1 12)
-    -- fromGregorian automatically trims to valid dates, so 2001-02-31 becomes 2001-02-28
-    gDay = Gen.int (Range.linear 1 31)
-    hToS = (* 3600)
-    gSeconds = Gen.int (Range.linearFrom (hToS 12) 0 86400)
-    gUTCTimeDay = fromGregorian . fromIntegral <$> gYear <*> gMonth <*> gDay
-    gDiffTime = secondsToDiffTime . fromIntegral <$> gSeconds
-  in
-    UTCTime <$> gUTCTimeDay <*> gDiffTime
-
-genReferrer ::
-  MonadGen m
-  => m GH.Referrer
-genReferrer =
-  GH.Referrer <$> genName <*> genIntCount <*> genIntCount
-
--- List of referrers with unique names
-genReferrers ::
-  MonadGen m
-  => m [GH.Referrer]
-genReferrers =
-  M.elems <$> Gen.map (Range.constant 0 15) ((\r -> (GH.referrer r, r)) <$> genReferrer)
-
-genPath ::
-  MonadGen m
-  => m GH.PopularPath
-genPath =
-  let
-    genText = Gen.text (Range.linear 1 100) Gen.ascii
-  in
-    GH.PopularPath <$> genText <*> genText <*> genIntCount <*> genIntCount
-
-genPaths ::
-  MonadGen m
-  => m [GH.PopularPath]
-genPaths =
-  genUniqueList genPath GH.popularPath
-
-genUniqueList ::
-  ( MonadGen m
-  , Ord b
-  )
-  => m a
-  -> (a -> b)
-  -> m [a]
-genUniqueList gen f =
-  fmap M.elems . Gen.map (Range.constant 0 15) . fmap (\a -> (f a, a)) $ gen
-
-genIntCount ::
-  MonadGen m
-  => m Int
-genIntCount =
-  Gen.int (Range.linear 0 1000000)
-
-genPop ::
-  MonadGen m
-  => m (Pop a)
-genPop =
-  Pop
-  Nothing
-  <$> (Position <$> Gen.int (Range.linear 1 10))
-  <*> genName
-  <*> genCount
-  <*> genUniques
-  <*> genId
-
-genVC ::
-  MonadGen m
-  => m (VC a)
-genVC =
-  VC Nothing
-  <$> genUTCTime
-  <*> genCount
-  <*> genUniques
-  <*> genId
-  <*> genName
-
-genCount ::
-  MonadGen m
-  => m (Count a)
-genCount =
-  Count <$> Gen.int (Range.linear 0 1000000)
-
-genUniques ::
-  MonadGen m
-  => m (Uniques a)
-genUniques =
-  Uniques <$> Gen.int (Range.linear 0 1000000)
-
--- genRepoStats ::
---   MonadGen m
---   => m RepoStats
--- genRepoStats =
---   RepoStats
---   <$> genName
---   <*> genUTCTime
---   <*> genStars
---   <*> genForks
---   <*> genReferrers
---   <*> genPaths
---   <*> genViews
---   <*> genClones
