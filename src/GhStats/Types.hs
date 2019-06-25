@@ -71,14 +71,16 @@ data Error =
 
 data CVD =
   CVD {
-    cvdName             :: GH.Name GH.Repo
-  , cvdTimestamp        :: UTCTime
-  , cvdExistingCount    :: Count GH.Views
-  , cvdExistingExisting :: Uniques GH.Views
-  , cvdNewCount         :: Count GH.Views
-  , cvdNewUniques       :: Uniques GH.Views
+    _cvdName            :: GH.Name GH.Repo
+  , _cvdTimestamp       :: UTCTime
+  , _cvdExistingCount   :: Count GH.Views
+  , _cvdExistingUniques :: Uniques GH.Views
+  , _cvdNewCount        :: Count GH.Views
+  , _cvdNewUniques      :: Uniques GH.Views
   }
   deriving (Show)
+
+makeLenses ''CVD
 
 makeClassyPrisms ''Error
 makeClassyPrisms ''SQLiteResponse
@@ -179,3 +181,6 @@ highLevelRepoStatsEnc =
 
 newtype Token = Token { getToken :: ByteString }
   deriving (Eq, Show, IsString)
+
+makeWrapped ''Count
+makeWrapped ''Uniques
