@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 module GhStats.Gens where
 
 import           Hedgehog         (Gen, GenT, MonadGen, MonadTest, Property,
@@ -10,6 +12,7 @@ import qualified Hedgehog.Range   as Range
 import qualified Data.Map         as M
 import           Data.Time        (UTCTime (UTCTime), fromGregorian,
                                    secondsToDiffTime)
+import qualified Data.Vector      as V
 import qualified GitHub           as GH
 
 import           GhStats.Db.Types (DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
@@ -139,10 +142,28 @@ genCount ::
   MonadGen m
   => m (Count a)
 genCount =
-  Count <$> Gen.int (Range.linear 0 1000000)
+  Count <$> genIntCount
 
 genUniques ::
   MonadGen m
   => m (Uniques a)
 genUniques =
-  Uniques <$> Gen.int (Range.linear 0 1000000)
+  Uniques <$> genIntCount
+
+genGhViews ::
+  MonadGen m
+  => m GH.Views
+genGhViews =
+  GH.Views <$> genIntCount <*> genIntCount <*> genTrafficCountVector
+
+genTrafficCountVector ::
+  MonadGen m
+  => m (V.Vector (GH.TrafficCount 'GH.View))
+genTrafficCountVector =
+  V.fromList <$> genUniqueList genTrafficCount GH.trafficCountTimestamp
+
+genTrafficCount ::
+  MonadGen m
+  => m (GH.TrafficCount a)
+genTrafficCount =
+  GH.TrafficCount <$> genUTCTime <*> genIntCount <*> genIntCount

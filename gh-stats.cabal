@@ -22,6 +22,7 @@ common mtl { build-depends: mtl >=2.2 && <2.3 }
 common text { build-depends: text >=1.2  && <1.3 }
 common time { build-depends: time >=1.8 && <1.9 }
 common containers { build-depends: containers >=0.6 && <0.7 }
+common vector {build-depends: vector >=0.12 && <0.13 }
 
 library
   import:              base
@@ -32,6 +33,7 @@ library
                      , sqlite-simple-errors
                      , text
                      , time
+                     , vector
 
   build-depends:
                        bytestring == 0.10.*
@@ -40,7 +42,6 @@ library
                      , optparse-applicative == 0.14.*
                      , sv == 1.3.*
                      , validation >=1 && <1.1
-                     , vector >=0.12 && <0.13
 
   exposed-modules:     GhStats
                      , GhStats.Db
@@ -71,6 +72,8 @@ test-suite tasty
                      , sqlite-simple-errors
                      , text
                      , time
+                     , vector
+
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:       GhStats.DbTest
