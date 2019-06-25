@@ -6,6 +6,8 @@
 module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
+import           Control.Lens                       (mapped, (&), (+~), (^.), (^?), _Wrapped, (%~))
+import           Control.Lens.Extras                (is)
 import           Control.Monad                      (join, void, zipWithM_,
                                                      (<=<))
 import           Control.Monad.Except               (ExceptT, MonadError,
@@ -17,7 +19,7 @@ import           Control.Monad.Reader               (MonadReader, ReaderT,
 import           Data.Foldable                      (traverse_)
 import           Data.List                          (nub)
 import qualified Data.Map                           as M
-import           Data.Maybe                         (fromJust)
+import           Data.Maybe                         (fromMaybe)
 import           Data.Proxy                         (Proxy (Proxy))
 import           Data.Text                          (Text)
 import           Data.Time                          (UTCTime (UTCTime),
@@ -27,13 +29,15 @@ import qualified Data.Vector                        as V
 import           Database.SQLite.Simple             (Connection, execute_)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError, SQLOtherError))
 import qualified GitHub                             as GH
+import           GitHub.Lens                        (trafficCount,
+                                                     trafficCountUniques, views)
 
 import           Hedgehog                           (Gen, GenT, MonadGen,
                                                      MonadTest, Property,
                                                      PropertyT, annotateShow,
-                                                     evalEither, evalM, failure,
-                                                     forAll, property, success,
-                                                     tripping, (===))
+                                                     assert, evalEither, evalM,
+                                                     failure, forAll, property,
+                                                     success, tripping, (===))
 import qualified Hedgehog.Gen                       as Gen
 import           Hedgehog.Internal.Property         (forAllT)
 import qualified Hedgehog.Range                     as Range
@@ -57,7 +61,7 @@ import           GhStats.Db.Types                   (DbRepoStats (DbRepoStats, _
                                                      Pop (Pop, popId, popRepoId),
                                                      Position (Position),
                                                      VC (VC, _vcId, _vcRepoId, _vcRepoName))
-import           GhStats.Types                      (AsSQLiteResponse,
+import           GhStats.Types                      (AsSQLiteResponse, CVD,
                                                      Count (Count),
                                                      Error (SQLiteError),
                                                      Forks (..),
@@ -65,7 +69,11 @@ import           GhStats.Types                      (AsSQLiteResponse,
                                                      HasConnection, RepoStats,
                                                      Stars (..),
                                                      Uniques (Uniques),
-                                                     runGhStatsM)
+                                                     cvdExistingCount,
+                                                     cvdExistingUniques,
+                                                     cvdNewCount, cvdNewUniques,
+                                                     runGhStatsM,
+                                                     _ConflictingViewData)
 
 import           GhStats.Gens
 import           GhStats.Test                       (GhStatsPropReaderT,
@@ -88,7 +96,7 @@ testDb conn =
   , ("repo_name consistency check", testRepoNameTrigger)
   , ("insertViews is idempotent", testInsertViewsIdempotency)
   , ("insertViews only inserts new", testInsertViewsOnlyInsertsNew)
-  -- TODO: check that inserting a conflicting view causes an error
+  , ("insertViews returns list of conflicts", testInsertViewsConflicts)
   ]
   where
     mkProp (name, prop) =
@@ -247,6 +255,30 @@ testInsertViewsOnlyInsertsNew conn = do
   sequence_ [ins vs1, ins vs]
   dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
   length dbViews === length (GH.views vs)
+
+testInsertViewsConflicts ::
+  Connection
+  -> PropertyT IO ()
+testInsertViewsConflicts conn = do
+  drs <- forAll genDbRepoStats
+  vs <- forAll genGhViews
+  resetDb conn
+
+  let
+    moddedVs = vs & views.mapped.trafficCount +~ 1 & views.mapped.trafficCountUniques +~ 2
+    ensureFailed = either pure badFail
+    badFail = error "Expected insertion of conflicting view data to fail"
+    checkConflict :: CVD -> PropertyT IO ()
+    checkConflict cvd = do
+      cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ succ)
+      cvd ^. cvdNewUniques === (cvd ^. cvdExistingUniques & _Wrapped %~ (+2))
+
+  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
+  evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
+  insModError <- ensureFailed <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) moddedVs
+  assert $ is _ConflictingViewData insModError
+  traverse_ checkConflict $ insModError ^? _ConflictingViewData & fromMaybe []
+
 
 resetDb ::
   MonadIO m
