@@ -220,8 +220,8 @@ testInsertViewsIdempotency conn = do
   resetDb conn
 
   drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
-  evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
-  evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
+  let ins = evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
+  sequence_ [ins,ins]
   dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
   length dbViews === length (GH.views vs)
 
