@@ -192,6 +192,19 @@ insertViews' rsId repoName tcvs = do
   withConnIO $ \conn ->
     executeMany conn (insertVCQ (Proxy :: Proxy GH.Views)) . toInsertList $ insertMap
 
+selectViewsForRepoId ::
+  DbConstraints e r m
+  => Id DbRepoStats
+  -> m [VC GH.Views]
+selectViewsForRepoId drsId =
+  let
+    q =  selectVCFieldsQ
+      <> "FROM " <> tableNameQ @GH.Views <> " "
+      <> "WHERE repo_id = ?"
+  in
+    withConnIO $ \conn ->
+      query conn q (Only drsId)
+
 checkOverlap ::
   M.WhenMatched (V.Validation [CVD])
                 (GH.Name GH.Repo, UTCTime)
@@ -425,11 +438,16 @@ selectVC ::
   -> m (Maybe (VC a))
 selectVC idee =
   let
-    q =  "SELECT id, timestamp, count, uniques, repo_id, repo_name "
+    q =  selectVCFieldsQ
       <> "FROM " <> tableNameQ @a <> " "
       <> "WHERE id = ?"
   in
     selectById q $ wrapId idee
+
+selectVCFieldsQ ::
+  Query
+selectVCFieldsQ =
+  "SELECT id, timestamp, count, uniques, repo_id, repo_name "
 
 selectById ::
   forall e r m a.

@@ -40,7 +40,7 @@ import           Test.Tasty                         (TestName, TestTree,
                                                      testGroup)
 import           Test.Tasty.Hedgehog                (testProperty)
 
-import           GhStats.Db                         (initDb, insertPop,
+import           GhStats.Db                         (initDb, insertPop, selectViewsForRepoId,
                                                      insertPops,
                                                      insertReferrers,
                                                      insertRepoStats, insertVC,
@@ -83,7 +83,7 @@ testDb conn =
   , ("View round trip", testViewRoundTrip)
   , ("Clone round trip", testClonesRoundTrip)
   , ("repo_name consistency check", testRepoNameTrigger)
-  --, ("insertViews is idempotent", testInsertViewsIdempotency)
+  , ("insertViews is idempotent", testInsertViewsIdempotency)
   ]
   where
     mkProp (name, prop) =
@@ -211,11 +211,19 @@ testVCRoundTrip _ conn = do
   vcSelected <- (evalEither =<<) . hoozit conn $ selectVC vcId
   Just vcExpected === vcSelected
 
--- testInsertViewsIdempotency ::
---   Connection
---   -> PropertyT IO ()
--- testInsertViewsIdempotency conn = do
---   undefined
+testInsertViewsIdempotency ::
+  Connection
+  -> PropertyT IO ()
+testInsertViewsIdempotency conn = do
+  drs <- forAll genDbRepoStats
+  vs <- forAll genGhViews
+  resetDb conn
+
+  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
+  evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
+  evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
+  dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
+  length dbViews === length (GH.views vs)
 
 resetDb ::
   MonadIO m
