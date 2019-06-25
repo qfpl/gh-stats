@@ -88,6 +88,7 @@ testDb conn =
   , ("repo_name consistency check", testRepoNameTrigger)
   , ("insertViews is idempotent", testInsertViewsIdempotency)
   , ("insertViews only inserts new", testInsertViewsOnlyInsertsNew)
+  -- TODO: check that inserting a conflicting view causes an error
   ]
   where
     mkProp (name, prop) =
