@@ -165,7 +165,7 @@ testNonExistentRepo conn = do
   ref <- forAllT genPop
   resetDb conn
   eRefId <- hoozit conn $ insertPop ref
-  checkResult eRefId
+  evalM $ checkResult eRefId
   where
     checkResult ::
       Either Error (Id GH.Referrer)
