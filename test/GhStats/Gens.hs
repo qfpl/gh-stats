@@ -97,17 +97,19 @@ genPaths ::
   MonadGen m
   => m [GH.PopularPath]
 genPaths =
-  genUniqueList genPath GH.popularPath
+  genUniqueList 0 15 genPath GH.popularPath
 
 genUniqueList ::
   ( MonadGen m
   , Ord b
   )
-  => m a
+  => Int
+  -> Int
+  -> m a
   -> (a -> b)
   -> m [a]
-genUniqueList gen f =
-  fmap M.elems . Gen.map (Range.constant 0 15) . fmap (\a -> (f a, a)) $ gen
+genUniqueList lower upper gen f =
+  fmap M.elems . Gen.map (Range.constant lower upper) . fmap (\a -> (f a, a)) $ gen
 
 genIntCount ::
   MonadGen m
@@ -160,7 +162,7 @@ genTrafficCountVector ::
   MonadGen m
   => m (V.Vector (GH.TrafficCount 'GH.View))
 genTrafficCountVector =
-  V.fromList <$> genUniqueList genTrafficCount GH.trafficCountTimestamp
+  V.fromList <$> genUniqueList 14 14 genTrafficCount GH.trafficCountTimestamp
 
 genTrafficCount ::
   MonadGen m

@@ -6,7 +6,8 @@
 module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
-import           Control.Lens                       (mapped, (&), (+~), (^.), (^?), _Wrapped, (%~))
+import           Control.Lens                       (mapped, (%~), (&), (+~),
+                                                     (^.), (^?), _Wrapped)
 import           Control.Lens.Extras                (is)
 import           Control.Monad                      (join, void, zipWithM_,
                                                      (<=<))
@@ -266,16 +267,16 @@ testInsertViewsConflicts conn = do
 
   let
     moddedVs = vs & views.mapped.trafficCount +~ 1 & views.mapped.trafficCountUniques +~ 2
-    ensureFailed = either pure badFail
-    badFail = error "Expected insertion of conflicting view data to fail"
-    checkConflict :: CVD -> PropertyT IO ()
+    ensureFailed = either pure $ error "Expected insertion of conflicting view data to fail"
     checkConflict cvd = do
       cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ succ)
       cvd ^. cvdNewUniques === (cvd ^. cvdExistingUniques & _Wrapped %~ (+2))
 
+  annotateShow vs
+  annotateShow moddedVs
   drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
   evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
-  insModError <- ensureFailed <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) moddedVs
+  insModError <- evalM . ensureFailed <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) moddedVs
   assert $ is _ConflictingViewData insModError
   traverse_ checkConflict $ insModError ^? _ConflictingViewData & fromMaybe []
 
