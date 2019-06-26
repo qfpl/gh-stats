@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -6,8 +7,9 @@
 module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
-import           Control.Lens                       (mapped, (%~), (&), (+~),
-                                                     (^.), (^?), _Wrapped)
+import           Control.Lens                       (mapped, to, (%~), (&),
+                                                     (+~), (.~), (^.), (^?),
+                                                     _Wrapped)
 import           Control.Lens.Extras                (is)
 import           Control.Monad                      (join, void, zipWithM_,
                                                      (<=<))
@@ -31,6 +33,7 @@ import           Database.SQLite.Simple             (Connection, execute_)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError, SQLOtherError))
 import qualified GitHub                             as GH
 import           GitHub.Lens                        (trafficCount,
+                                                     trafficCountTimestamp,
                                                      trafficCountUniques, views)
 
 import           Hedgehog                           (Gen, GenT, MonadGen,
@@ -61,7 +64,8 @@ import           GhStats.Db.Types                   (DbRepoStats (DbRepoStats, _
                                                      Id (Id),
                                                      Pop (Pop, popId, popRepoId),
                                                      Position (Position),
-                                                     VC (VC, _vcId, _vcRepoId, _vcRepoName))
+                                                     VC (VC, _vcCount, _vcId, _vcRepoId, _vcRepoName, _vcTimestamp, _vcUniques),
+                                                     dbRepoStatsName)
 import           GhStats.Types                      (AsSQLiteResponse, CVD,
                                                      Count (Count),
                                                      Error (SQLiteError),
@@ -73,7 +77,7 @@ import           GhStats.Types                      (AsSQLiteResponse, CVD,
                                                      cvdExistingCount,
                                                      cvdExistingUniques,
                                                      cvdNewCount, cvdNewUniques,
-                                                     runGhStatsM,
+                                                     repoStatsName, runGhStatsM,
                                                      _ConflictingViewData)
 
 import           GhStats.Gens
@@ -261,24 +265,43 @@ testInsertViewsConflicts ::
   Connection
   -> PropertyT IO ()
 testInsertViewsConflicts conn = do
-  drs <- forAll genDbRepoStats
+  drs1 <- forAll genDbRepoStats
+  drs2' <- forAll genDbRepoStats
   vs <- forAll genGhViews
   resetDb conn
 
   let
+    repoName = drs1 ^. dbRepoStatsName
+    drs2 = dbRepoStatsName .~ repoName $ drs2'
     moddedVs = vs & views.mapped.trafficCount +~ 1 & views.mapped.trafficCountUniques +~ 2
     ensureFailed = either pure $ error "Expected insertion of conflicting view data to fail"
     checkConflict cvd = do
       cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ succ)
       cvd ^. cvdNewUniques === (cvd ^. cvdExistingUniques & _Wrapped %~ (+2))
 
-  annotateShow vs
-  annotateShow moddedVs
-  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
-  evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
-  insModError <- evalM . ensureFailed <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) moddedVs
+  drsId1 <- evalEither <=< hoozit conn $ insertRepoStats drs1
+  drsId2 <- evalEither <=< hoozit conn $ insertRepoStats drs2
+  evalEither <=< hoozit conn $ insertViews drsId1 repoName vs
+  insModError <- evalM . ensureFailed <=< hoozit conn $ insertViews drsId2 repoName moddedVs
+
   assert $ is _ConflictingViewData insModError
   traverse_ checkConflict $ insModError ^? _ConflictingViewData & fromMaybe []
+
+  dbViews1 <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId1
+  vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews1)
+
+  dbViews2 <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId2
+  assert $ null dbViews2
+
+vcToTrafficCount ::
+  VC a
+  -> GH.TrafficCount b
+vcToTrafficCount VC{_vcTimestamp, _vcCount, _vcUniques} =
+  GH.TrafficCount {
+    GH.trafficCountTimestamp = _vcTimestamp
+  , GH.trafficCount = _vcCount ^. _Wrapped
+  , GH.trafficCountUniques = _vcUniques ^. _Wrapped
+  }
 
 
 resetDb ::

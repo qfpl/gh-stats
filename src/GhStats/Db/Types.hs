@@ -4,10 +4,12 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
 
 module GhStats.Db.Types where
 
+import           Control.Lens                     (makeLenses)
 import           Data.Int                         (Int64)
 import           Data.Proxy                       (Proxy (Proxy))
 import           Data.Text                        (Text)
@@ -122,23 +124,6 @@ instance FromRow (VC a) where
 nameField ::
   RowParser (GH.Name a)
 nameField = GH.mkName (Proxy :: Proxy a) <$> field
--- data DbClone =
---   DbClone
---   { _dbCloneId        :: !(Maybe (Id DbClone))
---   , _dbCloneTimestamp :: !UTCTime
---   , _dbCloneCount     :: !(Count DbClone)
---   , _dbCloneUniques   :: !(Uniques DbClone)
---   , _dbCloneRepoId    :: !(Id DbRepoStats)
---   }
---   deriving (Eq, Show)
 
--- instance HasTable DbClone where
---   tableName = "clones"
-
--- instance ToRow DbClone where
---   toRow DbClone{..} =
---     toRow (_dbCloneTimestamp, _dbCloneCount, _dbCloneUniques, _dbCloneRepoId)
-
--- instance FromRow DbClone where
---   fromRow =
---     DbClone <$> field <*> field <*> field <*> field <*> field
+makeLenses ''VC
+makeLenses ''DbRepoStats
