@@ -112,6 +112,7 @@ testDb conn =
   , ("insertViews only inserts new", testInsertViewsOnlyInsertsNew)
   , ("insertClones only inserts new", testInsertClonesOnlyInsertsNew)
   , ("insertViews returns list of conflicts", testInsertViewsConflicts)
+  , ("insertClones returns list of conflicts", testInsertClonesConflicts)
   ]
   where
     mkProp (name, prop) =
@@ -315,16 +316,36 @@ testInsertVCsOnlyInsertsNew gen ins sel gv conn = do
 testInsertViewsConflicts ::
   Connection
   -> PropertyT IO ()
-testInsertViewsConflicts conn = do
+testInsertViewsConflicts =
+  testInsertVCsConflicts genGhViews insertViews selectViewsForRepoId views
+
+testInsertClonesConflicts ::
+  Connection
+  -> PropertyT IO ()
+testInsertClonesConflicts =
+  testInsertVCsConflicts genGhClones insertClones selectClonesForRepoId clones
+
+testInsertVCsConflicts ::
+  forall a b.
+  ( HasTable a
+  , Show a
+  )
+  => Gen a
+  -> InsertVCFn a
+  -> SelectVCFn a
+  -> Lens' a (Vector (GH.TrafficCount b))
+  -> Connection
+  -> PropertyT IO ()
+testInsertVCsConflicts gen ins sel ltcs conn = do
   drs1 <- forAll genDbRepoStats
   drs2' <- forAll genDbRepoStats
-  vs <- forAll genGhViews
+  vcs <- forAll gen
   resetDb conn
 
   let
     repoName = drs1 ^. dbRepoStatsName
     drs2 = dbRepoStatsName .~ repoName $ drs2'
-    moddedVs = vs & views.mapped.trafficCount +~ 1 & views.mapped.trafficCountUniques +~ 2
+    moddedVCs = vcs & ltcs.mapped.trafficCount +~ 1 & ltcs.mapped.trafficCountUniques +~ 2
     ensureFailed = either pure $ error "Expected insertion of conflicting view data to fail"
     checkConflict cvd = do
       cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ succ)
@@ -332,16 +353,16 @@ testInsertViewsConflicts conn = do
 
   drsId1 <- evalEither <=< hoozit conn $ insertRepoStats drs1
   drsId2 <- evalEither <=< hoozit conn $ insertRepoStats drs2
-  evalEither <=< hoozit conn $ insertViews drsId1 repoName vs
-  insModError <- evalM . ensureFailed <=< hoozit conn $ insertViews drsId2 repoName moddedVs
+  evalEither <=< hoozit conn $ ins drsId1 repoName vcs
+  insModError <- evalM . ensureFailed <=< hoozit conn $ ins drsId2 repoName moddedVCs
 
   assert $ is _ConflictingVCData insModError
   traverse_ checkConflict $ insModError ^? _ConflictingVCData & fromMaybe []
 
-  dbViews1 <- evalEither <=< hoozit conn $ selectVCsForRepoId @GH.Views drsId1
-  vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews1)
+  dbViews1 <- evalEither <=< hoozit conn $ sel drsId1
+  vcs ^. ltcs.to V.toList === (vcToTrafficCount <$> dbViews1)
 
-  dbViews2 <- evalEither <=< hoozit conn $ selectVCsForRepoId @GH.Views drsId2
+  dbViews2 <- evalEither <=< hoozit conn $ sel drsId2
   assert $ null dbViews2
 
 vcToTrafficCount ::
