@@ -1,15 +1,20 @@
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
-import           Control.Lens                       (mapped, to, (%~), (&),
-                                                     (+~), (.~), (^.), (^?),
-                                                     _Wrapped)
+import           Control.Lens                       (Getter, mapped, to, (%~),
+                                                     (&), (+~), (.~), (^.),
+                                                     (^?), _Wrapped)
 import           Control.Lens.Extras                (is)
 import           Control.Monad                      (join, void, zipWithM_,
                                                      (<=<))
@@ -28,6 +33,7 @@ import           Data.Text                          (Text)
 import           Data.Time                          (UTCTime (UTCTime),
                                                      fromGregorian,
                                                      secondsToDiffTime)
+import           Data.Vector                        (Vector)
 import qualified Data.Vector                        as V
 import           Database.SQLite.Simple             (Connection, execute_)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError, SQLOtherError))
@@ -217,7 +223,7 @@ testClonesRoundTrip =
   testVCRoundTrip (Proxy :: Proxy GH.Clones)
 
 testVCRoundTrip ::
-  forall a.
+  forall (a :: *).
   HasTable a
   => Proxy a
   -> Connection
@@ -233,33 +239,41 @@ testVCRoundTrip _ conn = do
   vcSelected <- (evalEither =<<) . hoozit conn $ selectVC vcId
   Just vcExpected === vcSelected
 
-testInsertViewsIdempotency ::
-  Connection
+type InsertVCFn a = Id DbRepoStats -> GH.Name GH.Repo -> a -> GhStatsM ()
+type SelectVCFn a = Id DbRepoStats -> GhStatsM [VC a]
+
+testInsertVCsIdempotency ::
+  ( HasTable a
+  , Show a
+  )
+  => Gen a
+  -> InsertVCFn a
+  -> SelectVCFn a
+  -> Getter a (Vector (GH.TrafficCount b))
+  -> Connection
   -> PropertyT IO ()
-testInsertViewsIdempotency conn = do
+testInsertVCsIdempotency gen ins sel gv conn = do
   drs <- forAll genDbRepoStats
-  vs <- forAll genGhViews
+  vcs <- forAll gen
   resetDb conn
 
   drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
-  let ins = evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
-  sequence_ [ins,ins]
-  dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
-  vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews)
+  let insAction = evalEither <=< hoozit conn $ ins drsId (_dbRepoStatsName drs) vcs
+  sequence_ [insAction, insAction]
+  dbVCs <- evalEither <=< hoozit conn $ sel drsId
+  vcs ^. gv.to V.toList === (vcToTrafficCount <$> dbVCs)
+
+testInsertViewsIdempotency ::
+  Connection
+  -> PropertyT IO ()
+testInsertViewsIdempotency =
+  testInsertVCsIdempotency genGhViews insertViews selectViewsForRepoId views
 
 testInsertClonesIdempotency ::
   Connection
   -> PropertyT IO ()
-testInsertClonesIdempotency conn = do
-  drs <- forAll genDbRepoStats
-  cs <- forAll genGhClones
-  resetDb conn
-
-  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
-  let ins = evalEither <=< hoozit conn $ insertClones drsId (_dbRepoStatsName drs) cs
-  sequence_ [ins,ins]
-  dbClones <- evalEither <=< hoozit conn $ selectClonesForRepoId drsId
-  cs ^. clones.to V.toList === (vcToTrafficCount <$> dbClones)
+testInsertClonesIdempotency =
+  testInsertVCsIdempotency genGhClones insertClones selectClonesForRepoId clones
 
 testInsertViewsOnlyInsertsNew ::
   Connection
@@ -345,7 +359,7 @@ dbPopsEqual =
   zipWithM_ (\e a -> e === (a {popId = Nothing}))
 
 popRoundTrip ::
-  forall a.
+  forall (a :: *).
   HasTable a
   => Proxy a
   -> Connection
