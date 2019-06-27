@@ -1,6 +1,5 @@
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -12,9 +11,9 @@
 module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
-import           Control.Lens                       (Getter, mapped, to, (%~),
-                                                     (&), (+~), (.~), (^.),
-                                                     (^?), _Wrapped)
+import           Control.Lens                       (Getter, Lens', mapped, to,
+                                                     (%~), (&), (+~), (.~),
+                                                     (^.), (^?), _Wrapped)
 import           Control.Lens.Extras                (is)
 import           Control.Monad                      (join, void, zipWithM_,
                                                      (<=<))
@@ -111,6 +110,7 @@ testDb conn =
   , ("insertViews is idempotent", testInsertViewsIdempotency)
   , ("insertClones is idempotent", testInsertClonesIdempotency)
   , ("insertViews only inserts new", testInsertViewsOnlyInsertsNew)
+  , ("insertClones only inserts new", testInsertClonesOnlyInsertsNew)
   , ("insertViews returns list of conflicts", testInsertViewsConflicts)
   ]
   where
@@ -242,6 +242,18 @@ testVCRoundTrip _ conn = do
 type InsertVCFn a = Id DbRepoStats -> GH.Name GH.Repo -> a -> GhStatsM ()
 type SelectVCFn a = Id DbRepoStats -> GhStatsM [VC a]
 
+testInsertViewsIdempotency ::
+  Connection
+  -> PropertyT IO ()
+testInsertViewsIdempotency =
+  testInsertVCsIdempotency genGhViews insertViews selectViewsForRepoId views
+
+testInsertClonesIdempotency ::
+  Connection
+  -> PropertyT IO ()
+testInsertClonesIdempotency =
+  testInsertVCsIdempotency genGhClones insertClones selectClonesForRepoId clones
+
 testInsertVCsIdempotency ::
   ( HasTable a
   , Show a
@@ -263,35 +275,42 @@ testInsertVCsIdempotency gen ins sel gv conn = do
   dbVCs <- evalEither <=< hoozit conn $ sel drsId
   vcs ^. gv.to V.toList === (vcToTrafficCount <$> dbVCs)
 
-testInsertViewsIdempotency ::
-  Connection
-  -> PropertyT IO ()
-testInsertViewsIdempotency =
-  testInsertVCsIdempotency genGhViews insertViews selectViewsForRepoId views
-
-testInsertClonesIdempotency ::
-  Connection
-  -> PropertyT IO ()
-testInsertClonesIdempotency =
-  testInsertVCsIdempotency genGhClones insertClones selectClonesForRepoId clones
-
 testInsertViewsOnlyInsertsNew ::
   Connection
   -> PropertyT IO ()
-testInsertViewsOnlyInsertsNew conn = do
+testInsertViewsOnlyInsertsNew =
+  testInsertVCsOnlyInsertsNew genGhViews insertViews selectViewsForRepoId views
+
+testInsertClonesOnlyInsertsNew ::
+  Connection
+  -> PropertyT IO ()
+testInsertClonesOnlyInsertsNew =
+  testInsertVCsOnlyInsertsNew genGhClones insertClones selectClonesForRepoId clones
+
+testInsertVCsOnlyInsertsNew ::
+  ( HasTable a
+  , Show a
+  )
+  => Gen a
+  -> InsertVCFn a
+  -> SelectVCFn a
+  -> Lens' a (Vector (GH.TrafficCount b))
+  -> Connection
+  -> PropertyT IO ()
+testInsertVCsOnlyInsertsNew gen ins sel gv conn = do
   drs <- forAll genDbRepoStats
-  vs <- forAll genGhViews
+  vcs <- forAll gen
   n <- forAll $ Gen.int (Range.constant 0 5)
   resetDb conn
 
   drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
   let
-    ins vs' = evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs'
-    tcvs1 = V.take n $ GH.views vs
-    vs1 = vs {GH.views = tcvs1}
-  sequence_ [ins vs1, ins vs]
-  dbViews <- evalEither <=< hoozit conn $ selectVCsForRepoId @GH.Views drsId
-  vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews)
+    insertAction vcs' = evalEither <=< hoozit conn $ ins drsId (_dbRepoStatsName drs) vcs'
+    tcvs1 = V.take n $ vcs ^. gv
+    vcs1 = gv .~ tcvs1 $ vcs
+  sequence_ [insertAction vcs1, insertAction vcs]
+  dbViews <- evalEither <=< hoozit conn $ sel drsId
+  vcs ^. gv.to V.toList === (vcToTrafficCount <$> dbViews)
 
 testInsertViewsConflicts ::
   Connection
