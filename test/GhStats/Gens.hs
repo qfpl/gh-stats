@@ -158,9 +158,15 @@ genGhViews ::
 genGhViews =
   GH.Views <$> genIntCount <*> genIntCount <*> genTrafficCountVector
 
+genGhClones ::
+  MonadGen m
+  => m GH.Clones
+genGhClones =
+  GH.Clones <$> genIntCount <*> genIntCount <*> genTrafficCountVector
+
 genTrafficCountVector ::
   MonadGen m
-  => m (V.Vector (GH.TrafficCount 'GH.View))
+  => m (V.Vector (GH.TrafficCount a))
 genTrafficCountVector =
   V.fromList <$> genUniqueList 14 14 genTrafficCount GH.trafficCountTimestamp
 

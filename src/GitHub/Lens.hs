@@ -22,6 +22,15 @@ _viewsCount = GH.viewsCount
 _viewsUniques :: GH.Views -> Int
 _viewsUniques = GH.viewsUniques
 
+_clones :: GH.Clones -> Vector (GH.TrafficCount 'GH.Clone)
+_clones = GH.clones
+
+_clonesCount :: GH.Clones -> Int
+_clonesCount = GH.clonesCount
+
+_clonesUniques :: GH.Clones -> Int
+_clonesUniques = GH.clonesUniques
+
 _trafficCountTimestamp :: GH.TrafficCount e -> UTCTime
 _trafficCountTimestamp = GH.trafficCountTimestamp
 
@@ -32,4 +41,5 @@ _trafficCountUniques :: GH.TrafficCount e -> Int
 _trafficCountUniques = GH.trafficCountUniques
 
 makeLensesWith rulez ''GH.Views
+makeLensesWith rulez ''GH.Clones
 makeLensesWith rulez ''GH.TrafficCount

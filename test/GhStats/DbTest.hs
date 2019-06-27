@@ -32,7 +32,7 @@ import qualified Data.Vector                        as V
 import           Database.SQLite.Simple             (Connection, execute_)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError, SQLOtherError))
 import qualified GitHub                             as GH
-import           GitHub.Lens                        (trafficCount,
+import           GitHub.Lens                        (clones, trafficCount,
                                                      trafficCountTimestamp,
                                                      trafficCountUniques, views)
 
@@ -49,13 +49,16 @@ import           Test.Tasty                         (TestName, TestTree,
                                                      testGroup)
 import           Test.Tasty.Hedgehog                (testProperty)
 
-import           GhStats.Db                         (initDb, insertPop,
-                                                     insertPops,
+import           GhStats.Db                         (initDb, insertClones,
+                                                     insertPop, insertPops,
                                                      insertReferrers,
                                                      insertRepoStats, insertVC,
-                                                     insertViews, selectPop,
+                                                     insertViews,
+                                                     selectClonesForRepoId,
+                                                     selectPop,
                                                      selectPopsForRepoStats,
                                                      selectRepoStats, selectVC,
+                                                     selectVCsForRepoId,
                                                      selectViewsForRepoId,
                                                      toDbPath, toDbPops,
                                                      toDbReferrer)
@@ -100,6 +103,7 @@ testDb conn =
   , ("Clone round trip", testClonesRoundTrip)
   , ("repo_name consistency check", testRepoNameTrigger)
   , ("insertViews is idempotent", testInsertViewsIdempotency)
+  , ("insertClones is idempotent", testInsertClonesIdempotency)
   , ("insertViews only inserts new", testInsertViewsOnlyInsertsNew)
   , ("insertViews returns list of conflicts", testInsertViewsConflicts)
   ]
@@ -241,7 +245,21 @@ testInsertViewsIdempotency conn = do
   let ins = evalEither <=< hoozit conn $ insertViews drsId (_dbRepoStatsName drs) vs
   sequence_ [ins,ins]
   dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
-  length dbViews === length (GH.views vs)
+  vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews)
+
+testInsertClonesIdempotency ::
+  Connection
+  -> PropertyT IO ()
+testInsertClonesIdempotency conn = do
+  drs <- forAll genDbRepoStats
+  cs <- forAll genGhClones
+  resetDb conn
+
+  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
+  let ins = evalEither <=< hoozit conn $ insertClones drsId (_dbRepoStatsName drs) cs
+  sequence_ [ins,ins]
+  dbClones <- evalEither <=< hoozit conn $ selectClonesForRepoId drsId
+  cs ^. clones.to V.toList === (vcToTrafficCount <$> dbClones)
 
 testInsertViewsOnlyInsertsNew ::
   Connection
@@ -258,8 +276,8 @@ testInsertViewsOnlyInsertsNew conn = do
     tcvs1 = V.take n $ GH.views vs
     vs1 = vs {GH.views = tcvs1}
   sequence_ [ins vs1, ins vs]
-  dbViews <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId
-  length dbViews === length (GH.views vs)
+  dbViews <- evalEither <=< hoozit conn $ selectVCsForRepoId @GH.Views drsId
+  vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews)
 
 testInsertViewsConflicts ::
   Connection
@@ -287,10 +305,10 @@ testInsertViewsConflicts conn = do
   assert $ is _ConflictingViewData insModError
   traverse_ checkConflict $ insModError ^? _ConflictingViewData & fromMaybe []
 
-  dbViews1 <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId1
+  dbViews1 <- evalEither <=< hoozit conn $ selectVCsForRepoId @GH.Views drsId1
   vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews1)
 
-  dbViews2 <- evalEither <=< hoozit conn $ selectViewsForRepoId drsId2
+  dbViews2 <- evalEither <=< hoozit conn $ selectVCsForRepoId @GH.Views drsId2
   assert $ null dbViews2
 
 vcToTrafficCount ::
@@ -302,7 +320,6 @@ vcToTrafficCount VC{_vcTimestamp, _vcCount, _vcUniques} =
   , GH.trafficCount = _vcCount ^. _Wrapped
   , GH.trafficCountUniques = _vcUniques ^. _Wrapped
   }
-
 
 resetDb ::
   MonadIO m

@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -32,17 +33,21 @@ newtype Position a = Position Int
 
 class HasTable r where
   tableName :: Text
+  tableName = tableNameProxy (Proxy :: Proxy r)
+
+  tableNameProxy :: Proxy r -> Text
+
   tableNameQ :: Query
-  tableNameQ = Query $ tableName @r
+  tableNameQ = Query $ tableNameProxy (Proxy :: Proxy r)
 
 instance HasTable DbRepoStats where
-  tableName = "repos"
+  tableNameProxy _ = "repos"
 
 instance HasTable RepoStats where
-  tableName = "repos"
+  tableNameProxy _ = "repos"
 
 instance HasTable GH.Referrer where
-  tableName = "referrers"
+  tableNameProxy _ = "referrers"
 
 data DbRepoStats =
   DbRepoStats {
@@ -80,7 +85,7 @@ data Pop a =
   deriving (Eq, Show)
 
 instance HasTable a => HasTable (Pop a) where
-  tableName = tableName @a
+  tableNameProxy (Proxy :: Proxy (Pop a)) = tableNameProxy (Proxy :: Proxy a)
 
 instance ToRow (Pop a) where
   toRow Pop{..} =
@@ -91,7 +96,7 @@ instance FromRow (Pop a) where
     Pop <$> field <*> field <*> nameField <*> field <*> field <*> field
 
 instance HasTable GH.PopularPath where
-  tableName = "paths"
+  tableNameProxy _ = "paths"
 
 data VC a =
   VC
@@ -105,13 +110,13 @@ data VC a =
   deriving (Eq, Show)
 
 instance HasTable a => HasTable (VC a) where
-  tableName = tableName @a
+  tableNameProxy (Proxy :: Proxy (VC a)) = tableNameProxy (Proxy :: Proxy a)
 
 instance HasTable GH.Views where
-  tableName = "views"
+  tableNameProxy _ = "views"
 
 instance HasTable GH.Clones where
-  tableName = "clones"
+  tableNameProxy _ = "clones"
 
 instance ToRow (VC a) where
   toRow VC{..} =

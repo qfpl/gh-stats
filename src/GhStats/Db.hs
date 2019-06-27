@@ -7,7 +7,36 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module GhStats.Db where
+module GhStats.Db
+  ( initDb
+
+  -- * Inserts
+  , addToDb
+  , insertClones
+  , insertPop
+  , insertPops
+  , insertReferrers
+  , insertRepoStats
+  , insertVC
+  , insertViews
+
+  -- * Queries
+  , selectClonesForRepoId
+  , selectViewsForRepoId
+  , selectClones
+  , selectPop
+  , selectPopsForRepoStats
+  , selectRepoStats
+  , selectVC
+  , selectVCsForRepoId
+  , selectViews
+
+  -- * Helpers
+  , toDbPath
+  , toDbPops
+  , toDbReferrer
+  , runDb
+  ) where
 
 import           Control.Lens                 (view, (^.))
 import           Control.Lens.Indexed         (FunctorWithIndex,
@@ -18,7 +47,7 @@ import           Control.Monad.Except         (MonadError)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import           Control.Monad.Reader         (MonadReader, ask)
 import           Data.Bool                    (bool)
-import           Data.Foldable                (Foldable, toList)
+import           Data.Foldable                (Foldable, toList, traverse_)
 import           Data.List.NonEmpty           (NonEmpty)
 import qualified Data.List.NonEmpty           as NE
 import qualified Data.Map.Merge.Strict        as M
@@ -120,8 +149,8 @@ initDb =
     qViewsRepoNameCheck = qRepoNameTrigger $ tableName @GH.Views
     qClonesRepoNameCheck = qRepoNameTrigger $ tableName @GH.Clones
   in
-    withConnIO $ \conn -> void $
-      traverse (execute_ conn) [
+    withConnIO $ \conn ->
+      traverse_ (execute_ conn) [
         enableForeignKeys
       , qRepos
       , qReferrer
@@ -155,7 +184,7 @@ insertRepoStatsTree rs = do
   insertViews rsId (rs ^. repoStatsName) (rs ^. repoStatsViews)
   pure rsId
 
-type ViewMap = Map (GH.Name GH.Repo, UTCTime) (Count GH.Views, Uniques GH.Views)
+type VCMap a = Map (GH.Name GH.Repo, UTCTime) (Count a, Uniques a)
 
 insertViews ::
   ( DbConstraints e r m
@@ -166,17 +195,35 @@ insertViews ::
   -> GH.Views
   -> m ()
 insertViews rsId rsName =
-  maybe (pure ()) (insertViews' rsId rsName) . NE.nonEmpty . toList . GH.views
+  maybe (pure ()) ins . NE.nonEmpty . toList . GH.views
+  where
+    ins = insertVCs (Proxy :: Proxy GH.Views) rsId rsName
 
-insertViews' ::
+insertClones ::
   ( DbConstraints e r m
   , AsError e
   )
   => Id DbRepoStats
   -> GH.Name GH.Repo
-  -> NonEmpty (GH.TrafficCount 'GH.View)
+  -> GH.Clones
   -> m ()
-insertViews' rsId repoName tcvs = do
+insertClones rsId rsName =
+  maybe (pure ()) ins . NE.nonEmpty . toList . GH.clones
+  where
+    ins = insertVCs (Proxy :: Proxy GH.Clones) rsId rsName
+
+insertVCs ::
+  forall a te e r m.
+  ( DbConstraints e r m
+  , AsError e
+  , HasTable a
+  )
+  => Proxy a
+  -> Id DbRepoStats
+  -> GH.Name GH.Repo
+  -> NonEmpty (GH.TrafficCount te)
+  -> m ()
+insertVCs p rsId repoName tcvs = do
   let
     dateRange = findDateRange tcvs
     toViewMapElem GH.TrafficCount{GH.trafficCountTimestamp, GH.trafficCount, GH.trafficCountUniques} =
@@ -186,20 +233,38 @@ insertViews' rsId repoName tcvs = do
     alwaysInsert = M.filterAMissing $ \_ _ -> pure True
     liftToInsertMap = either (throwing _ConflictingViewData) pure . V.toEither
     toInsertList = fmap (\((n,t),(c,u)) -> VC Nothing t c u rsId n) . M.toList
-  existing <- selectViewsBetweenDates dateRange repoName
+  existing <- selectVCsBetweenDates dateRange repoName
   insertMap <- liftToInsertMap $ M.mergeA alwaysSkip alwaysInsert checkOverlap existing new
-  let
   withConnIO $ \conn ->
-    executeMany conn (insertVCQ (Proxy :: Proxy GH.Views)) . toInsertList $ insertMap
+    executeMany conn (insertVCQ p) . toInsertList $ insertMap
 
 selectViewsForRepoId ::
+  forall e r m.
   DbConstraints e r m
   => Id DbRepoStats
   -> m [VC GH.Views]
-selectViewsForRepoId drsId =
+selectViewsForRepoId =
+  selectVCsForRepoId @GH.Views
+
+selectClonesForRepoId ::
+  forall e r m.
+  DbConstraints e r m
+  => Id DbRepoStats
+  -> m [VC GH.Clones]
+selectClonesForRepoId =
+  selectVCsForRepoId @GH.Clones
+
+selectVCsForRepoId ::
+  forall a e r m.
+  ( DbConstraints e r m
+  , HasTable a
+  )
+  => Id DbRepoStats
+  -> m [VC a]
+selectVCsForRepoId drsId =
   let
     q =  selectVCFieldsQ
-      <> "FROM " <> tableNameQ @GH.Views <> " "
+      <> "FROM " <> tableNameQ @a <> " "
       <> "WHERE repo_id = ?"
   in
     withConnIO $ \conn ->
@@ -217,15 +282,18 @@ checkOverlap =
          (pure Nothing)
          (c1 == c2 && u1 == u2)
 
-selectViewsBetweenDates ::
-  DbConstraints e r m
+selectVCsBetweenDates ::
+  forall a e r m.
+  ( DbConstraints e r m
+  , HasTable a
+  )
   => (UTCTime, UTCTime)
   -> GH.Name GH.Repo
-  -> m ViewMap
-selectViewsBetweenDates (start, end) repoName =
+  -> m (VCMap a)
+selectVCsBetweenDates (start, end) repoName =
   let
     q =  "SELECT repo_name, timestamp, count, uniques "
-      <> "FROM views "
+      <> "FROM " <> tableNameQ @a <> " "
       <> "WHERE repo_name = ? "
       <> "AND timestamp BETWEEN ? AND ?"
     mkName = GH.mkName (Proxy :: Proxy GH.Repo)
@@ -235,7 +303,7 @@ selectViewsBetweenDates (start, end) repoName =
        M.fromList . (toViewMapElem <$>) <$> query conn q (GH.untagName repoName, start, end)
 
 findDateRange ::
-  NonEmpty (GH.TrafficCount 'GH.View)
+  NonEmpty (GH.TrafficCount a)
   -> (UTCTime, UTCTime)
 findDateRange views =
   let
@@ -366,6 +434,15 @@ selectViews ::
   => Id GH.Views
   -> m (Maybe (VC GH.Views))
 selectViews =
+  selectVC
+
+selectClones ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => Id GH.Clones
+  -> m (Maybe (VC GH.Clones))
+selectClones =
   selectVC
 
 insertPopQ ::
