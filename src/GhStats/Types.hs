@@ -1,15 +1,20 @@
+{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module GhStats.Types where
 
 import           Control.Exception                  (Exception, throw)
-import           Control.Lens                       (Lens', Prism', lens,
+import           Control.Lens                       (Getter, Lens', Prism', lens,
                                                      makeClassyPrisms,
                                                      makeLenses, makeWrapped,
                                                      prism, to, (&), (^.),
@@ -66,21 +71,43 @@ data Error =
   SQLiteError SQLiteResponse
   | GithubError GH.Error
   | TooManyResults Text
-  | ConflictingViewData [CVD]
+  | ConflictingVCData [CVD]
   deriving (Show)
 
 data CVD =
+  forall a.
   CVD {
     _cvdName            :: GH.Name GH.Repo
   , _cvdTimestamp       :: UTCTime
-  , _cvdExistingCount   :: Count GH.Views
-  , _cvdExistingUniques :: Uniques GH.Views
-  , _cvdNewCount        :: Count GH.Views
-  , _cvdNewUniques      :: Uniques GH.Views
+  , _cvdExistingCount   :: Count a
+  , _cvdExistingUniques :: Uniques a
+  , _cvdNewCount        :: Count a
+  , _cvdNewUniques      :: Uniques a
   }
-  deriving (Show)
 
-makeLenses ''CVD
+deriving instance Show CVD
+
+-- makeLenses silently fails creating lenses for these given the existential. We
+-- can easily create the Getters though.
+cvdNewCount ::
+  Getter CVD (Count a)
+cvdNewCount =
+  to $ \CVD{_cvdNewCount = Count n} -> Count n
+
+cvdNewUniques ::
+  Getter CVD (Uniques a)
+cvdNewUniques =
+  to $ \CVD{_cvdNewUniques = Uniques n} -> Uniques n
+
+cvdExistingCount ::
+  Getter CVD (Count a)
+cvdExistingCount =
+  to $ \CVD{_cvdExistingCount = Count n} -> Count n
+
+cvdExistingUniques ::
+  Getter CVD (Uniques a)
+cvdExistingUniques =
+  to $ \CVD{_cvdExistingUniques = Uniques n} -> Uniques n
 
 makeClassyPrisms ''Error
 makeClassyPrisms ''SQLiteResponse

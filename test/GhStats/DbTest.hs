@@ -87,7 +87,7 @@ import           GhStats.Types                      (AsSQLiteResponse, CVD,
                                                      cvdExistingUniques,
                                                      cvdNewCount, cvdNewUniques,
                                                      repoStatsName, runGhStatsM,
-                                                     _ConflictingViewData)
+                                                     _ConflictingVCData)
 
 import           GhStats.Gens
 import           GhStats.Test                       (GhStatsPropReaderT,
@@ -316,8 +316,8 @@ testInsertViewsConflicts conn = do
   evalEither <=< hoozit conn $ insertViews drsId1 repoName vs
   insModError <- evalM . ensureFailed <=< hoozit conn $ insertViews drsId2 repoName moddedVs
 
-  assert $ is _ConflictingViewData insModError
-  traverse_ checkConflict $ insModError ^? _ConflictingViewData & fromMaybe []
+  assert $ is _ConflictingVCData insModError
+  traverse_ checkConflict $ insModError ^? _ConflictingVCData & fromMaybe []
 
   dbViews1 <- evalEither <=< hoozit conn $ selectVCsForRepoId @GH.Views drsId1
   vs ^. views.to V.toList === (vcToTrafficCount <$> dbViews1)

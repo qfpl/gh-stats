@@ -65,7 +65,7 @@ import           Database.SQLite.SimpleErrors (runDBAction)
 import qualified GitHub                       as GH
 
 import           GhStats.Db.Types
-import           GhStats.Types                (AsError (_ConflictingViewData, _TooManyResults),
+import           GhStats.Types                (AsError (_ConflictingVCData, _TooManyResults),
                                                AsSQLiteResponse (_SQLiteResponse),
                                                CVD (CVD), Count (Count),
                                                HasConnection (connection),
@@ -231,9 +231,9 @@ insertVCs p rsId repoName tcvs = do
     new = M.fromList . NE.toList $ toViewMapElem <$> tcvs
     alwaysSkip = M.filterAMissing $ \_ _ -> pure False
     alwaysInsert = M.filterAMissing $ \_ _ -> pure True
-    liftToInsertMap = either (throwing _ConflictingViewData) pure . V.toEither
+    liftToInsertMap = either (throwing _ConflictingVCData) pure . V.toEither
     toInsertList = fmap (\((n,t),(c,u)) -> VC Nothing t c u rsId n) . M.toList
-  existing <- selectVCsBetweenDates dateRange repoName
+  existing <- selectVCsBetweenDates @a dateRange repoName
   insertMap <- liftToInsertMap $ M.mergeA alwaysSkip alwaysInsert checkOverlap existing new
   withConnIO $ \conn ->
     executeMany conn (insertVCQ p) . toInsertList $ insertMap
@@ -273,9 +273,9 @@ selectVCsForRepoId drsId =
 checkOverlap ::
   M.WhenMatched (V.Validation [CVD])
                 (GH.Name GH.Repo, UTCTime)
-                (Count GH.Views, Uniques GH.Views)
-                (Count GH.Views, Uniques GH.Views)
-                (Count GH.Views, Uniques GH.Views)
+                (Count a, Uniques a)
+                (Count a, Uniques a)
+                (Count a, Uniques a)
 checkOverlap =
   M.zipWithMaybeAMatched $ \(n,t) (c1,u1) (c2,u2) ->
     bool (V.Failure [CVD n t c1 u1 c2 u2])
