@@ -71,7 +71,7 @@ import           GhStats.Types                (AsError (_ConflictingVCData, _Too
                                                HasConnection (connection),
                                                RepoStats (..),
                                                Uniques (Uniques),
-                                               repoStatsName,
+                                               repoStatsName, repoStatsClones,
                                                repoStatsPopularPaths,
                                                repoStatsPopularReferrers,
                                                repoStatsViews)
@@ -178,10 +178,13 @@ insertRepoStatsTree ::
   => RepoStats
   -> m (Id DbRepoStats)
 insertRepoStatsTree rs = do
+  let
+    repoName = rs ^. repoStatsName
   rsId <- insertRepoStats $ toDbRepoStats rs
   insertReferrers rsId $ rs ^. repoStatsPopularReferrers
   insertPaths rsId $ rs ^. repoStatsPopularPaths
-  insertViews rsId (rs ^. repoStatsName) (rs ^. repoStatsViews)
+  insertViews rsId repoName (rs ^. repoStatsViews)
+  insertClones rsId repoName (rs ^. repoStatsClones)
   pure rsId
 
 type VCMap a = Map (GH.Name GH.Repo, UTCTime) (Count a, Uniques a)
