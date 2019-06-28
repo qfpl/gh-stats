@@ -131,7 +131,7 @@ initDb =
       , ")"
       ]
     qRepoNameTrigger tn = toQ [
-        "CREATE TRIGGER " <> tn <> "_repo_name"
+        "CREATE TRIGGER IF NOT EXISTS " <> tn <> "_repo_name"
       , "AFTER INSERT ON " <> tn
       , "BEGIN"
       , "  SELECT RAISE(ROLLBACK, 'repo name not valid')"

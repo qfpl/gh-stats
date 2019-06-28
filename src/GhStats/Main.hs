@@ -17,7 +17,7 @@ import           Options.Applicative    (Parser, command, execParser, fullDesc,
                                          subparser, (<**>))
 
 import           GhStats                (getHighLevelOrgStats, getOrgStats)
-import           GhStats.Db             (addToDb, runDb)
+import           GhStats.Db             (addToDb, runDb, initDb)
 import           GhStats.Types          (Error, Token, highLevelRepoStatsEnc)
 
 go ::
@@ -46,7 +46,7 @@ updateDb ::
 updateDb orgName dbFile token = print <=< runExceptT $ do
   conn <- runDb $ open dbFile
   repoStats <- getOrgStats token orgName
-  runReaderT (addToDb repoStats) conn :: ExceptT Error IO ()
+  runReaderT (initDb >> addToDb repoStats) conn :: ExceptT Error IO ()
 
 main ::
   IO ()
