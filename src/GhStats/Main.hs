@@ -5,19 +5,20 @@ module GhStats.Main where
 import           Control.Monad          ((<=<))
 import           Control.Monad.Except   (ExceptT, runExceptT)
 import           Control.Monad.IO.Class (liftIO)
-import           Control.Monad.Reader   (runReaderT)
+import           Control.Monad.Reader   (ReaderT, runReaderT)
 import qualified Data.ByteString.Lazy   as LBS
-import           Data.Foldable          (toList)
+import           Data.Foldable          (toList, traverse_)
 import           Data.Sv                (defaultEncodeOptions, encodeNamed)
-import           Database.SQLite.Simple (open)
+import           Database.SQLite.Simple (Connection, open)
 import qualified GitHub                 as GH
 import           Options.Applicative    (Parser, command, execParser, fullDesc,
                                          header, help, helper, info, long,
                                          metavar, progDesc, short, strOption,
                                          subparser, (<**>))
 
-import           GhStats                (getHighLevelOrgStats, getOrgStats)
-import           GhStats.Db             (addToDb, runDb, initDb)
+import           GhStats                (getHighLevelOrgStats, getReposForOrg,
+                                         toRepoStats)
+import           GhStats.Db             (initDb, insertRepoStatsTree)
 import           GhStats.Types          (Error, Token, highLevelRepoStatsEnc)
 
 go ::
@@ -32,11 +33,17 @@ csv ::
   GH.Name GH.Organization
   -> Token
   -> IO ()
-csv orgName token = print <=< runExceptT $ do
+csv orgName token =
   let
-    dumpCsv = LBS.putStr . encodeNamed highLevelRepoStatsEnc defaultEncodeOptions . toList
-  es <- getHighLevelOrgStats token orgName
-  (liftIO :: IO () -> ExceptT Error IO ()) $ dumpCsv es
+    run :: ExceptT Error IO () -> IO ()
+    run = print <=< runExceptT
+
+    enc = encodeNamed highLevelRepoStatsEnc defaultEncodeOptions
+    dumpCsv = LBS.putStr . enc . toList
+  in
+    run $ do
+      es <- getHighLevelOrgStats token orgName
+      liftIO $ dumpCsv es
 
 updateDb ::
   GH.Name GH.Organization
