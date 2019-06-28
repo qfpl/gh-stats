@@ -1,6 +1,6 @@
 { mkDerivation, base, bytestring, containers, directory, github
 , hedgehog, http-client, lens, mmorph, mtl, optparse-applicative
-, sqlite-simple, sqlite-simple-errors, stdenv, sv, tasty
+, servant, sqlite-simple, sqlite-simple-errors, stdenv, sv, tasty
 , tasty-hedgehog, text, time, validation, vector
 }:
 mkDerivation {
@@ -11,8 +11,8 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     base bytestring containers github http-client lens mtl
-    optparse-applicative sqlite-simple sqlite-simple-errors sv text
-    time validation vector
+    optparse-applicative servant sqlite-simple sqlite-simple-errors sv
+    text time validation vector
   ];
   executableHaskellDepends = [ base ];
   testHaskellDepends = [

@@ -3,8 +3,9 @@ self: super: {
     overrides = super.lib.composeExtensions (old.overrides or (_:_: {})) (hself: hsuper: {
       # Newer versions we need.
       concurrent-output = hsuper.concurrent-output_1_10_10;
-      sv-core = hsuper.callHackage "sv-core" "0.4.1" {};
       hedgehog = hsuper.hedgehog_1_0;
+      servant = hsuper.servant_0_16_0_1;
+      sv-core = hsuper.callHackage "sv-core" "0.4.1" {};
 
       # Things that work with our newer versions of things.
       cassava = doJailbreak hsuper.cassava;
