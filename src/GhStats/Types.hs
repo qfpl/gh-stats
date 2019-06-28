@@ -14,8 +14,8 @@
 module GhStats.Types where
 
 import           Control.Exception                  (Exception, throw)
-import           Control.Lens                       (Getter, Lens', Prism', lens,
-                                                     makeClassyPrisms,
+import           Control.Lens                       (Getter, Lens', Prism',
+                                                     lens, makeClassyPrisms,
                                                      makeLenses, makeWrapped,
                                                      prism, to, (&), (^.),
                                                      _Wrapped)
@@ -37,6 +37,7 @@ import           Database.SQLite.Simple.ToField     (ToField)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 import qualified GitHub                             as GH
 import           Network.HTTP.Client                (HttpException)
+import           Servant.Server                     (ServantError)
 
 newtype GhStatsM a =
   GhStatsM (ReaderT Connection (ExceptT Error IO) a)
@@ -72,6 +73,7 @@ data Error =
   | GithubError GH.Error
   | TooManyResults Text
   | ConflictingVCData [CVD]
+  | ServantErr ServantError
   deriving (Show)
 
 data CVD =

@@ -5,6 +5,8 @@ self: super: {
       concurrent-output = hsuper.concurrent-output_1_10_10;
       hedgehog = hsuper.hedgehog_1_0;
       servant = hsuper.servant_0_16_0_1;
+      servant-server = hsuper.servant-server_0_16;
+      servant-lucid = hsuper.servant-lucid_0_9;
       sv-core = hsuper.callHackage "sv-core" "0.4.1" {};
 
       # Things that work with our newer versions of things.
