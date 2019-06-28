@@ -30,8 +30,15 @@ getOrgStats ::
   => Token
   -> GH.Name GH.Organization
   -> m (Vector RepoStats)
-getOrgStats tok org =
-  traverse (toRepoStats tok) =<< handleGhReq (organizationRepos org)
+getOrgStats tok =
+  traverse (toRepoStats tok) <=< getReposForOrg
+
+getReposForOrg ::
+  GhConstraints e m
+  => GH.Name GH.Organization
+  -> m (Vector GH.Repo)
+getReposForOrg org =
+  handleGhReq (organizationRepos org)
 
 getHighLevelOrgStats ::
   GhConstraints e m

@@ -50,10 +50,25 @@ updateDb ::
   -> FilePath
   -> Token
   -> IO ()
-updateDb orgName dbFile token = print <=< runExceptT $ do
-  conn <- runDb $ open dbFile
-  repoStats <- getOrgStats token orgName
-  runReaderT (initDb >> addToDb repoStats) conn :: ExceptT Error IO ()
+updateDb orgName dbFile token = do
+  conn <- open dbFile
+  updateDb' conn orgName token
+
+updateDb' ::
+  Connection
+  -> GH.Name GH.Organization
+  -> Token
+  -> IO ()
+updateDb' conn orgName token =
+  let
+    run :: ReaderT Connection (ExceptT Error IO) () -> IO ()
+    run = print <=< runExceptT . flip runReaderT conn
+  in
+    run $ do
+      initDb
+      repos <- getReposForOrg orgName
+      -- repoStats <- getOrgStats token orgName
+      traverse_ (insertRepoStatsTree <=< toRepoStats token) repos
 
 main ::
   IO ()

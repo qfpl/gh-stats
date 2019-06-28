@@ -17,6 +17,7 @@ module GhStats.Db
   , insertPops
   , insertReferrers
   , insertRepoStats
+  , insertRepoStatsTree
   , insertVC
   , insertViews
 
