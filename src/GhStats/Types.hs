@@ -14,16 +14,14 @@
 module GhStats.Types where
 
 import           Control.Exception                  (Exception, throw)
-import           Control.Lens                       (Getter, Lens', Prism',
-                                                     lens, makeClassyPrisms,
-                                                     makeLenses, makeWrapped,
-                                                     prism, to, (&), (^.),
-                                                     _Wrapped)
-import           Control.Monad.Except               (ExceptT, MonadError,
-                                                     runExceptT)
+import           Control.Lens
+    (Getter, Lens', Prism', lens, makeClassyPrisms, makeLenses, makeWrapped,
+    prism, to, (&), (^.), _Wrapped)
+import           Control.Monad.Except
+    (ExceptT, MonadError, runExceptT)
 import           Control.Monad.IO.Class             (MonadIO)
-import           Control.Monad.Reader               (MonadReader, ReaderT,
-                                                     runReaderT)
+import           Control.Monad.Reader
+    (MonadReader, ReaderT, runReaderT)
 import           Data.ByteString                    (ByteString)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -37,7 +35,7 @@ import           Database.SQLite.Simple.ToField     (ToField)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 import qualified GitHub                             as GH
 import           Network.HTTP.Client                (HttpException)
-import           Servant.Server                     (ServantError)
+import           Servant                            (ServerError)
 
 newtype GhStatsM a =
   GhStatsM (ReaderT Connection (ExceptT Error IO) a)
@@ -73,7 +71,7 @@ data Error =
   | GithubError GH.Error
   | TooManyResults Text
   | ConflictingVCData [CVD]
-  | ServantErr ServantError
+  | ServantError ServerError
   deriving (Show)
 
 data CVD =
@@ -115,6 +113,16 @@ makeClassyPrisms ''Error
 makeClassyPrisms ''SQLiteResponse
 
 instance Exception Error
+
+-- Writing by hand as ServerError has a single constructor of the same name.
+class AsServerError e where
+  _ServerError :: Prism' e ServerError
+
+instance AsServerError Error where
+  _ServerError = _ServantError
+
+instance AsServerError ServerError where
+  _ServerError = id
 
 -- Writing the class by hand because of naming clashes
 class AsGhError e where
