@@ -40,6 +40,7 @@ genDbRepoStats =
   <*> genUniques
   <*> genCount
   <*> genUniques
+  <*> genId
 
 genId ::
   MonadGen m

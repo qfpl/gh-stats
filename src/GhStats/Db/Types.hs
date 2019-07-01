@@ -65,18 +65,20 @@ data DbRepoStats =
   , _dbRepoStatsUniqueViews  :: !(Uniques Views)
   , _dbRepoStatsClones       :: !(Count Clones)
   , _dbRepoStatsUniqueClones :: !(Uniques Clones)
+  , _dbRepoStatsRunId        :: !(Id RepoStatsRun)
   }
   deriving (Eq, Show)
 
 instance ToRow DbRepoStats where
   toRow DbRepoStats {..} =
     toRow (GH.untagName _dbRepoStatsName, _dbRepoStatsTimestamp, _dbRepoStatsStars, _dbRepoStatsForks,
-           _dbRepoStatsViews, _dbRepoStatsUniqueViews, _dbRepoStatsClones, _dbRepoStatsUniqueClones)
+           _dbRepoStatsViews, _dbRepoStatsUniqueViews, _dbRepoStatsClones, _dbRepoStatsUniqueClones,
+           _dbRepoStatsRunId)
 
 instance FromRow DbRepoStats where
   fromRow =
     DbRepoStats <$> field <*> nameField <*> field <*> field <*> field <*> field <*> field <*> field
-      <*> field
+      <*> field <*> field
 
 data Pop a =
   Pop {

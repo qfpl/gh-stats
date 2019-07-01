@@ -5,93 +5,70 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
-import           Control.Lens                       (Getter, Lens', mapped, to,
-                                                     (%~), (&), (+~), (.~),
-                                                     (^.), (^?), _Wrapped)
+import           Control.Lens
+    (Getter, Lens', mapped, to, (%~), (&), (+~), (.~), (^.), (^?), _Wrapped, (?~))
 import           Control.Lens.Extras                (is)
-import           Control.Monad                      (join, void, zipWithM_,
-                                                     (<=<))
-import           Control.Monad.Except               (ExceptT, MonadError,
-                                                     runExceptT)
+import           Control.Monad
+    (join, void, zipWithM_, (<=<))
+import           Control.Monad.Except
+    (ExceptT, MonadError, runExceptT)
 import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Monad.Morph                (hoist)
-import           Control.Monad.Reader               (MonadReader, ReaderT,
-                                                     runReaderT)
+import           Control.Monad.Reader
+    (MonadReader, ReaderT, runReaderT)
 import           Data.Foldable                      (traverse_)
 import           Data.List                          (nub)
 import qualified Data.Map                           as M
 import           Data.Maybe                         (fromMaybe)
 import           Data.Proxy                         (Proxy (Proxy))
 import           Data.Text                          (Text)
-import           Data.Time                          (UTCTime (UTCTime),
-                                                     fromGregorian,
-                                                     secondsToDiffTime)
+import           Data.Time
+    (UTCTime (UTCTime), fromGregorian, secondsToDiffTime)
 import           Data.Vector                        (Vector)
 import qualified Data.Vector                        as V
 import           Database.SQLite.Simple             (Connection, execute_)
-import           Database.SQLite.SimpleErrors.Types (SQLiteResponse (SQLConstraintError, SQLOtherError))
+import           Database.SQLite.SimpleErrors.Types
+    (SQLiteResponse (SQLConstraintError, SQLOtherError))
 import qualified GitHub                             as GH
-import           GitHub.Lens                        (clones, trafficCount,
-                                                     trafficCountTimestamp,
-                                                     trafficCountUniques, views)
+import           GitHub.Lens
+    (clones, trafficCount, trafficCountTimestamp, trafficCountUniques, views)
 
-import           Hedgehog                           (Gen, GenT, MonadGen,
-                                                     MonadTest, Property,
-                                                     PropertyT, annotateShow,
-                                                     assert, evalEither, evalM,
-                                                     failure, forAll, property,
-                                                     success, tripping, (===))
-import qualified Hedgehog.Gen                       as Gen
-import           Hedgehog.Internal.Property         (forAllT)
-import qualified Hedgehog.Range                     as Range
-import           Test.Tasty                         (TestName, TestTree,
-                                                     testGroup)
-import           Test.Tasty.Hedgehog                (testProperty)
+import           Hedgehog
+    (Gen, GenT, MonadGen, MonadTest, Property, PropertyT, annotateShow, assert,
+    evalEither, evalM, failure, forAll, property, success, tripping, (===))
+import qualified Hedgehog.Gen               as Gen
+import           Hedgehog.Internal.Property (forAllT)
+import qualified Hedgehog.Range             as Range
+import           Test.Tasty                 (TestName, TestTree, testGroup)
+import           Test.Tasty.Hedgehog        (testProperty)
 
-import           GhStats.Db                         (initDb, insertClones,
-                                                     insertPop, insertPops,
-                                                     insertReferrers,
-                                                     insertRepoStats, insertVC,
-                                                     insertViews,
-                                                     selectClonesForRepoId,
-                                                     selectPop,
-                                                     selectPopsForRepoStats,
-                                                     selectRepoStats, selectVC,
-                                                     selectVCsForRepoId,
-                                                     selectViewsForRepoId,
-                                                     toDbPath, toDbPops,
-                                                     toDbReferrer)
-import           GhStats.Db.Types                   (DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
-                                                     HasTable (tableName, tableNameQ),
-                                                     Id (Id),
-                                                     Pop (Pop, popId, popRepoId),
-                                                     Position (Position),
-                                                     VC (VC, _vcCount, _vcId, _vcRepoId, _vcRepoName, _vcTimestamp, _vcUniques),
-                                                     dbRepoStatsName)
-import           GhStats.Types                      (AsSQLiteResponse, CVD,
-                                                     Count (Count),
-                                                     Error (SQLiteError),
-                                                     Forks (..),
-                                                     GhStatsM (GhStatsM),
-                                                     HasConnection, RepoStats,
-                                                     Stars (..),
-                                                     Uniques (Uniques),
-                                                     cvdExistingCount,
-                                                     cvdExistingUniques,
-                                                     cvdNewCount, cvdNewUniques,
-                                                     repoStatsName, runGhStatsM,
-                                                     _ConflictingVCData)
+import GhStats.Db
+    (initDb, insertClones, insertPop, insertPops, insertReferrers,
+    insertRepoStats, insertRepoStatsRun, insertVC, insertViews,
+    selectClonesForRepoId, selectPop, selectPopsForRepoStats, selectRepoStats,
+    selectVC, selectVCsForRepoId, selectViewsForRepoId, toDbPath, toDbPops,
+    toDbReferrer)
+import GhStats.Db.Types
+    (DbRepoStats (DbRepoStats, _dbRepoStatsName),
+    HasTable (tableName, tableNameQ), Id (Id), Pop (Pop, popId, popRepoId),
+    Position (Position), RepoStatsRun,
+    VC (VC, _vcCount, _vcId, _vcRepoId, _vcRepoName, _vcTimestamp, _vcUniques),
+    dbRepoStatsId, dbRepoStatsName, dbRepoStatsRunId)
+import GhStats.Types
+    (AsSQLiteResponse, CVD, Count (Count), Error (SQLiteError), Forks (..),
+    GhStatsM (GhStatsM), HasConnection, RepoStats, Stars (..),
+    Uniques (Uniques), cvdExistingCount, cvdExistingUniques, cvdNewCount,
+    cvdNewUniques, repoStatsName, runGhStatsM, _ConflictingVCData)
 
-import           GhStats.Gens
-import           GhStats.Test                       (GhStatsPropReaderT,
-                                                     GhStatsPropertyT,
-                                                     runGhStatsPropertyT)
+import GhStats.Gens
+import GhStats.Test (GhStatsPropReaderT, GhStatsPropertyT, runGhStatsPropertyT)
 
 testDb ::
   Connection
@@ -124,12 +101,13 @@ testRepoStatsRoundTrip ::
 testRepoStatsRoundTrip conn = do
     drs <- forAll genDbRepoStats
     resetDb conn
-    drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
+    (runId, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
     selectedRepoStats <- (evalEither =<<) . hoozit conn $ selectRepoStats drsId
     let
-      drsWithId =
-        drs {_dbRepoStatsId = Just drsId}
-    maybe failure (=== drsWithId) selectedRepoStats
+      drs' = drs
+           & dbRepoStatsId ?~ drsId
+           & dbRepoStatsRunId .~ runId
+    maybe failure (=== drs') selectedRepoStats
 
 testReferrerRoundTrip ::
   Connection
@@ -167,7 +145,7 @@ testPopsRoundTrip genA convert conn = do
   drs <- forAll genDbRepoStats
   as <- forAll genA
   resetDb conn
-  drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
+  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
   let
     dbPopsExpected = toDbPops (convert drsId) as
   (evalEither =<<) . hoozit conn $ insertPops (convert drsId) as
@@ -197,10 +175,10 @@ testRepoNameTrigger ::
   Connection
   -> PropertyT IO ()
 testRepoNameTrigger conn = do
-  rs <- forAll genDbRepoStats
+  drs <- forAll genDbRepoStats
   viewsNoRsId <- forAll genVC
   resetDb conn
-  drsId <- evalEither <=< hoozit conn $ insertRepoStats rs
+  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
   let views = viewsNoRsId {_vcRepoId = drsId}
   evId <- hoozit conn $ insertVC @GH.Views views
   either checkIsOtherError bad evId
@@ -233,7 +211,7 @@ testVCRoundTrip _ conn = do
   drs <- forAllT genDbRepoStats
   vcBadId <- forAllT genVC
   resetDb conn
-  drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
+  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
   let vc = vcBadId {_vcRepoId = drsId, _vcRepoName = _dbRepoStatsName drs}
   vcId <- (evalEither =<<) . hoozit conn $ insertVC @a vc
   let vcExpected = vc {_vcId = Just vcId}
@@ -270,7 +248,7 @@ testInsertVCsIdempotency gen ins sel gv conn = do
   vcs <- forAll gen
   resetDb conn
 
-  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
+  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
   let insAction = evalEither <=< hoozit conn $ ins drsId (_dbRepoStatsName drs) vcs
   sequence_ [insAction, insAction]
   dbVCs <- evalEither <=< hoozit conn $ sel drsId
@@ -304,7 +282,7 @@ testInsertVCsOnlyInsertsNew gen ins sel gv conn = do
   n <- forAll $ Gen.int (Range.constant 0 5)
   resetDb conn
 
-  drsId <- evalEither <=< hoozit conn $ insertRepoStats drs
+  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
   let
     insertAction vcs' = evalEither <=< hoozit conn $ ins drsId (_dbRepoStatsName drs) vcs'
     tcvs1 = V.take n $ vcs ^. gv
@@ -351,8 +329,8 @@ testInsertVCsConflicts gen ins sel ltcs conn = do
       cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ succ)
       cvd ^. cvdNewUniques === (cvd ^. cvdExistingUniques & _Wrapped %~ (+2))
 
-  drsId1 <- evalEither <=< hoozit conn $ insertRepoStats drs1
-  drsId2 <- evalEither <=< hoozit conn $ insertRepoStats drs2
+  (_, drsId1) <- (evalEither =<<) $ insertRunAndStats conn drs1
+  (_, drsId2) <- (evalEither =<<) $ insertRunAndStats conn drs2
   evalEither <=< hoozit conn $ ins drsId1 repoName vcs
   insModError <- evalM . ensureFailed <=< hoozit conn $ ins drsId2 repoName moddedVCs
 
@@ -408,7 +386,7 @@ popRoundTrip _ conn =  do
   drs <- forAllT genDbRepoStats
   popBadRepoId <- forAllT genPop
   resetDb conn
-  drsId <- (evalEither =<<) . hoozit conn $ insertRepoStats drs
+  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
   let pop = popBadRepoId {popRepoId = drsId}
   popId' <- (evalEither =<<) . hoozit conn $ insertPop @a pop
   mPopSelected <- (evalEither =<<) . hoozit conn $ selectPop popId'
@@ -421,3 +399,12 @@ hoozit ::
   -> PropertyT IO (Either Error a)
 hoozit conn (GhStatsM m)=
   liftIO . runExceptT $ runReaderT m conn
+
+insertRunAndStats ::
+  Connection
+  -> DbRepoStats
+  -> PropertyT IO (Either Error (Id RepoStatsRun, Id DbRepoStats))
+insertRunAndStats conn rs = do
+  rsrId <- evalEither =<< hoozit conn insertRepoStatsRun
+  let mRsId = hoozit conn . insertRepoStats $ dbRepoStatsRunId .~ rsrId $ rs
+  (fmap . fmap) (rsrId,) mRsId

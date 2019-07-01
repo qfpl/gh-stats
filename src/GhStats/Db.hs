@@ -17,6 +17,7 @@ module GhStats.Db
   , insertPops
   , insertReferrers
   , insertRepoStats
+  , insertRepoStatsRun
   , insertRepoStatsTree
   , insertVC
   , insertViews
@@ -104,6 +105,8 @@ initDb =
       , ", unique_views INTEGER NOT NULL" -- unique views over the last 14 days
       , ", clones INTEGER NOT NULL" -- clones over the last 14 days
       , ", unique_clones INTEGER NOT NULL" -- unique_clones over the last 14 days
+      , ", repo_stats_run INTEGER NOT NULL"
+      , ", FOREIGN KEY(repo_stats_run) REFERENCES " <> tableName @RepoStatsRun <> "(id)"
       , ")"
       ]
     qPop tn = toQ [
@@ -184,7 +187,7 @@ insertRepoStatsTree rs = do
   let
     repoName = rs ^. repoStatsName
   rsrId <- insertRepoStatsRun
-  rsId <- insertRepoStats $ toDbRepoStats rs
+  rsId <- insertRepoStats $ toDbRepoStats rsrId rs
   insertReferrers rsId $ rs ^. repoStatsPopularReferrers
   insertPaths rsId $ rs ^. repoStatsPopularPaths
   insertViews rsId repoName (rs ^. repoStatsViews)
@@ -339,8 +342,9 @@ insertRepoStats =
     tnq = tableNameQ @RepoStats
   in
     insert $
-      "INSERT INTO " <> tnq <> " (name, timestamp, stars, forks, views, unique_views, clones, unique_clones) "
-      <> "VALUES (?,?,?,?,?,?,?,?)"
+      "INSERT INTO " <> tnq <> " "
+      <> "(name, timestamp, stars, forks, views, unique_views, clones, unique_clones, repo_stats_run) "
+      <> "VALUES (?,?,?,?,?,?,?,?,?)"
 
 unwrapId ::
   Id (f a)
@@ -357,7 +361,7 @@ wrapId (Id i) =
 selectRepoStatsQ ::
   Query
 selectRepoStatsQ =
-  "SELECT id, name, timestamp, stars, forks, views, unique_views, clones, unique_clones "
+  "SELECT id, name, timestamp, stars, forks, views, unique_views, clones, unique_clones, repo_stats_run "
 
 selectRepoStats ::
   ( DbConstraints e r m
@@ -581,13 +585,22 @@ selectById q idee =
       _ -> pure Nothing
 
 toDbRepoStats ::
-  RepoStats
+  Id RepoStatsRun
+  -> RepoStats
   -> DbRepoStats
-toDbRepoStats RepoStats{ _repoStatsName, _repoStatsTimestamp, _repoStatsStars, _repoStatsForks
+toDbRepoStats rsrId RepoStats{ _repoStatsName, _repoStatsTimestamp, _repoStatsStars, _repoStatsForks
                        , _repoStatsViews, _repoStatsClones} =
-  DbRepoStats Nothing _repoStatsName _repoStatsTimestamp _repoStatsStars _repoStatsForks
-              (Count . GH.viewsCount $ _repoStatsViews) (Uniques . GH.viewsUniques $ _repoStatsViews)
-              (Count . GH.clonesCount $ _repoStatsClones) (Uniques . GH.clonesUniques $ _repoStatsClones)
+  DbRepoStats
+    Nothing
+    _repoStatsName
+    _repoStatsTimestamp
+    _repoStatsStars
+    _repoStatsForks
+    (Count . GH.viewsCount $ _repoStatsViews)
+    (Uniques . GH.viewsUniques $ _repoStatsViews)
+    (Count . GH.clonesCount $ _repoStatsClones)
+    (Uniques . GH.clonesUniques $ _repoStatsClones)
+    rsrId
 
 insert ::
   ( DbConstraints e r m
