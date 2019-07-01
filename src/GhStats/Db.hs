@@ -92,7 +92,13 @@ initDb =
   let
     enableForeignKeys = "PRAGMA foreign_keys = ON;"
     toQ = Query . T.intercalate "\n"
-    qRepos = toQ [
+    qRepoStatsRuns = toQ [
+        "CREATE TABLE IF NOT EXISTS " <> tableName @RepoStatsRun
+      , "( id INTEGER PRIMARY KEY"
+      , ", timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"
+      , ")"
+      ]
+    qRepoStats = toQ [
         "CREATE TABLE IF NOT EXISTS ", tableName @RepoStats, " "
       , "( id INTEGER PRIMARY KEY"
       , ", name TEXT NOT NULL"
@@ -153,7 +159,8 @@ initDb =
     withConnIO $ \conn ->
       traverse_ (execute_ conn) [
         enableForeignKeys
-      , qRepos
+      , qRepoStatsRuns
+      , qRepoStats
       , qReferrer
       , qPaths
       , qViews
@@ -181,12 +188,25 @@ insertRepoStatsTree ::
 insertRepoStatsTree rs = do
   let
     repoName = rs ^. repoStatsName
+  rsrId <- insertRepoStatsRun
   rsId <- insertRepoStats $ toDbRepoStats rs
   insertReferrers rsId $ rs ^. repoStatsPopularReferrers
   insertPaths rsId $ rs ^. repoStatsPopularPaths
   insertViews rsId repoName (rs ^. repoStatsViews)
   insertClones rsId repoName (rs ^. repoStatsClones)
   pure rsId
+
+
+insertRepoStatsRun ::
+  DbConstraints e r m
+  => m (Id RepoStatsRun)
+insertRepoStatsRun =
+  let
+    q = "INSERT INTO " <> tableNameQ @RepoStatsRun <> " DEFAULT VALUES"
+  in
+    withConnIO $ \conn -> do
+      execute_ conn q
+      fmap Id $ lastInsertRowId conn
 
 type VCMap a = Map (GH.Name GH.Repo, UTCTime) (Count a, Uniques a)
 
@@ -339,6 +359,11 @@ wrapId ::
 wrapId (Id i) =
   Id i
 
+selectRepoStatsQ ::
+  Query
+selectRepoStatsQ =
+  "SELECT id, name, timestamp, stars, forks, views, unique_views, clones, unique_clones "
+
 selectRepoStats ::
   ( DbConstraints e r m
   , AsError e
@@ -348,10 +373,21 @@ selectRepoStats ::
 selectRepoStats i =
   let
     tnq = tableNameQ @RepoStats
-    q =  "SELECT id, name, timestamp, stars, forks, views, unique_views, clones, unique_clones "
-      <> "FROM " <> tnq <> " WHERE id = ?"
+    q = selectRepoStatsQ <> "FROM " <> tnq <> " WHERE id = ?"
   in
     selectById q i
+
+-- selectLatestRepoStats ::
+--   ( DbConstraints e r m
+--   , AsError e
+--   )
+--   => m (Maybe DbRepoStats)
+-- selectLatestRepoStats =
+--   let
+--     tnq = tableNameQ @RepoStats
+--     q = selectRepoStatsQ <> "FROM " <> tnq <> " WHERE id = ?"
+--   in
+--     selectById q
 
 insertReferrers ::
   ( DbConstraints e r m

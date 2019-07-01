@@ -41,13 +41,18 @@ class HasTable r where
   tableNameQ = Query $ tableNameProxy (Proxy :: Proxy r)
 
 instance HasTable DbRepoStats where
-  tableNameProxy _ = "repos"
+  tableNameProxy _ = tableNameProxy (Proxy :: Proxy RepoStats)
 
 instance HasTable RepoStats where
-  tableNameProxy _ = "repos"
+  tableNameProxy _ = "repo_stats"
 
 instance HasTable GH.Referrer where
   tableNameProxy _ = "referrers"
+
+data RepoStatsRun
+
+instance HasTable RepoStatsRun where
+  tableNameProxy _ = "repo_stats_runs"
 
 data DbRepoStats =
   DbRepoStats {
