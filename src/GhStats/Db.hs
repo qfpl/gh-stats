@@ -40,8 +40,8 @@ module GhStats.Db
   ) where
 
 import           Control.Lens                 (view, (^.))
-import           Control.Lens.Indexed         (FunctorWithIndex,
-                                               TraversableWithIndex, imap)
+import           Control.Lens.Indexed
+    (FunctorWithIndex, TraversableWithIndex, imap)
 import           Control.Monad                (void, (<=<))
 import           Control.Monad.Error.Lens     (throwing)
 import           Control.Monad.Except         (MonadError)
@@ -58,24 +58,19 @@ import           Data.Proxy                   (Proxy (Proxy))
 import qualified Data.Text                    as T
 import           Data.Time.Clock              (UTCTime)
 import qualified Data.Validation              as V
-import           Database.SQLite.Simple       (Connection, FromRow, Only (Only),
-                                               Query (Query), ToRow, execute,
-                                               executeMany, execute_,
-                                               lastInsertRowId, query)
+import           Database.SQLite.Simple
+    (Connection, FromRow, Only (Only), Query (Query), ToRow, execute,
+    executeMany, execute_, lastInsertRowId, query)
 import           Database.SQLite.SimpleErrors (runDBAction)
 import qualified GitHub                       as GH
 
-import           GhStats.Db.Types
-import           GhStats.Types                (AsError (_ConflictingVCData, _TooManyResults),
-                                               AsSQLiteResponse (_SQLiteResponse),
-                                               CVD (CVD), Count (Count),
-                                               HasConnection (connection),
-                                               RepoStats (..),
-                                               Uniques (Uniques),
-                                               repoStatsName, repoStatsClones,
-                                               repoStatsPopularPaths,
-                                               repoStatsPopularReferrers,
-                                               repoStatsViews)
+import GhStats.Db.Types
+import GhStats.Types
+    (AsError (_ConflictingVCData, _TooManyResults),
+    AsSQLiteResponse (_SQLiteResponse), CVD (CVD), Count (Count),
+    HasConnection (connection), RepoStats (..), Uniques (Uniques),
+    repoStatsClones, repoStatsName, repoStatsPopularPaths,
+    repoStatsPopularReferrers, repoStatsViews)
 
 type DbConstraints e r m =
   ( MonadReader r m
