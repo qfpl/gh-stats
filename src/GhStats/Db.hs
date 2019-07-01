@@ -26,6 +26,7 @@ module GhStats.Db
   , selectClonesForRepoId
   , selectViewsForRepoId
   , selectClones
+  , selectLatestRepoStats
   , selectPop
   , selectPopsForRepoStats
   , selectRepoStats
@@ -61,7 +62,7 @@ import           Data.Time.Clock              (UTCTime)
 import qualified Data.Validation              as V
 import           Database.SQLite.Simple
     (Connection, FromRow, Only (Only), Query (Query), ToRow, execute,
-    executeMany, execute_, lastInsertRowId, query)
+    executeMany, execute_, lastInsertRowId, query, query_)
 import           Database.SQLite.SimpleErrors (runDBAction)
 import qualified GitHub                       as GH
 
@@ -376,17 +377,19 @@ selectRepoStats i =
   in
     selectById q i
 
--- selectLatestRepoStats ::
---   ( DbConstraints e r m
---   , AsError e
---   )
---   => m (Maybe DbRepoStats)
--- selectLatestRepoStats =
---   let
---     tnq = tableNameQ @RepoStats
---     q = selectRepoStatsQ <> "FROM " <> tnq <> " WHERE id = ?"
---   in
---     selectById q
+selectLatestRepoStats ::
+  ( DbConstraints e r m
+  , AsError e
+  )
+  => m [DbRepoStats]
+selectLatestRepoStats =
+  let
+    tnq = tableNameQ @RepoStats
+    latestRepoRunIdQ =
+      "SELECT id FROM " <> tableNameQ @RepoStatsRun <> "ORDER BY timestamp DESC LIMIT 1"
+    q = selectRepoStatsQ <> "FROM " <> tnq <> " WHERE repo_stats_run = (" <> latestRepoRunIdQ <> ")"
+  in
+    withConnIO $ \conn -> query_ conn q
 
 insertReferrers ::
   ( DbConstraints e r m

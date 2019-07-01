@@ -5,7 +5,6 @@
 
 module GhStats.Web where
 
-import Control.Lens           (makeClassyPrisms)
 import Control.Monad.Except   (MonadError)
 import Control.Monad.Reader   (MonadReader)
 import Data.Proxy             (Proxy (Proxy))
@@ -17,8 +16,8 @@ import Servant.API.Generic    ((:-), AsApi, ToServant, fromServant)
 import Servant.HTML.Lucid     (HTML)
 import Servant.Server         (ServerT)
 
-import GhStats.Db    (selectRepoStats)
-import GhStats.Types (AsServerError, RepoStats)
+import GhStats.Db    (selectLatestRepoStats)
+import GhStats.Types (AsServerError, RepoStats, GhStatsM)
 
 type ReposRoute =
   "repos" :> Get '[HTML] [RepoStats]
@@ -31,19 +30,13 @@ ghStatsApi ::
   Proxy GhStatsApi
 ghStatsApi = Proxy
 
--- ghStatsServer ::
---   ( MonadReader Connection m
---   , MonadError e m
---   , AsServerError e
---   )
---   => ServerT GhStatsApi m
--- ghStatsServer =
---   reposServer
+ghStatsServer ::
+  ServerT GhStatsApi GhStatsM
+ghStatsServer =
+  reposServer
 
--- reposServer ::
---   ( MonadReader Connection m
---   , MonadError e m
---   , AsServantError m
---   )
---   => ServerT GhStatsApi m
--- reposServer =
+reposServer ::
+  ServerT GhStatsApi GhStatsM
+reposServer =
+  selectLatestRepoStats
+
