@@ -89,12 +89,12 @@ toServantError ::
   -> ServerError
 toServantError e =
   let
-    dbMsg = "A database error occurred."
+    -- dbMsg = "A database error occurred."
     msg = case e of
-      SQLiteError _    -> dbMsg
-      GithubError _    -> "An error occurred fetching Github data."
-      TooManyResults _ -> dbMsg
-      ConflictingVCData _ -> dbMsg
+      SQLiteError sqle    -> BSL8.pack $ show sqle
+      GithubError ghe     -> BSL8.pack $ show ghe
+      TooManyResults tmr  -> BSL8.fromStrict . encodeUtf8 $ tmr
+      ConflictingVCData cvd -> BSL8.intercalate "\n" . fmap (BSL8.pack . show) $ cvd
   in
     err500 {errBody = msg}
 
