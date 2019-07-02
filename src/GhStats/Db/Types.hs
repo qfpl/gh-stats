@@ -1,17 +1,21 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module GhStats.Db.Types where
 
-import           Control.Lens                     (makeLenses)
+import           Control.Lens
+    (makeLenses, (&), (^.), _Wrapped)
 import           Data.Foldable                    (foldrM)
 import           Data.Int                         (Int64)
 import           Data.Proxy                       (Proxy (Proxy))
@@ -72,6 +76,8 @@ data DbRepoStats =
   }
   deriving (Eq, Show)
 
+makeLenses ''DbRepoStats
+
 instance ToRow DbRepoStats where
   toRow DbRepoStats {..} =
     toRow (GH.untagName _dbRepoStatsName, _dbRepoStatsTimestamp, _dbRepoStatsStars, _dbRepoStatsForks,
@@ -84,17 +90,24 @@ instance FromRow DbRepoStats where
       <*> field <*> field
 
 instance ToHtml [DbRepoStats] where
-  toHtml _drs =
+  toHtml drs =
     let
-      headers = foldMap th_ ["Name", "Stars", "Forks"]
+      headers = tr_ $ foldMap th_ [ "Name", "Stars", "Forks", "Views", "Unique Views", "Clones"
+                            , "Unique Clones"]
+      f ds l = (ds ^. l._Wrapped & (toHtml.show))
+      mkRow ds =
+        tr_ (td_ (ds ^. dbRepoStatsName & toHtml.GH.untagName)
+          <> td_ (f ds dbRepoStatsStars)
+          <> td_ (f ds dbRepoStatsForks)
+          <> td_ (f ds dbRepoStatsViews)
+          <> td_ (f ds dbRepoStatsUniqueViews)
+          <> td_ (f ds dbRepoStatsClones)
+          <> td_ (f ds dbRepoStatsUniqueClones)
+            )
     in
-      table_ (tr_ headers)
+      table_ $ headers <> foldMap mkRow drs
 
-  toHtmlRaw _drs =
-    let
-      headers = foldMap th_ ["Name", "Stars", "Forks"]
-    in
-      table_ (tr_ headers)
+  toHtmlRaw = toHtml
 
 data Pop a =
   Pop {
@@ -154,4 +167,3 @@ nameField ::
 nameField = GH.mkName (Proxy :: Proxy a) <$> field
 
 makeLenses ''VC
-makeLenses ''DbRepoStats

@@ -24,10 +24,12 @@ import           Control.Monad.Reader
     (MonadReader, ReaderT, runReaderT)
 import           Data.Bifunctor                     (first)
 import           Data.ByteString                    (ByteString)
+import qualified Data.ByteString.Lazy.Char8         as BSL8
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
 import qualified Data.Sv.Encode                     as E
 import           Data.Text                          (Text)
+import           Data.Text.Encoding                 (encodeUtf8)
 import           Data.Time.Clock                    (UTCTime)
 import           Data.Vector                        (Vector)
 import           Database.SQLite.Simple             (Connection, ToRow (toRow))
