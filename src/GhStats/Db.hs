@@ -376,7 +376,7 @@ selectLatestRepoStats =
   let
     tnq = tableNameQ @RepoStats
     latestRepoRunIdQ =
-      "SELECT id FROM " <> tableNameQ @RepoStatsRun <> "ORDER BY timestamp DESC LIMIT 1"
+      "SELECT id FROM " <> tableNameQ @RepoStatsRun <> " ORDER BY timestamp DESC LIMIT 1"
     q = selectRepoStatsQ <> "FROM " <> tnq <> " WHERE repo_stats_run = (" <> latestRepoRunIdQ <> ")"
   in
     withConnIO $ \conn -> query_ conn q
