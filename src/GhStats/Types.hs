@@ -18,10 +18,11 @@ import           Control.Lens
     (Getter, Lens', Prism', lens, makeClassyPrisms, makeLenses, makeWrapped,
     prism, to, (&), (^.), _Wrapped)
 import           Control.Monad.Except
-    (ExceptT, MonadError, runExceptT)
+    (ExceptT (ExceptT), MonadError, runExceptT)
 import           Control.Monad.IO.Class             (MonadIO)
 import           Control.Monad.Reader
     (MonadReader, ReaderT, runReaderT)
+import           Data.Bifunctor                     (first)
 import           Data.ByteString                    (ByteString)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -35,7 +36,8 @@ import           Database.SQLite.Simple.ToField     (ToField)
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 import qualified GitHub                             as GH
 import           Network.HTTP.Client                (HttpException)
-import           Servant                            (ServerError)
+import           Servant
+    (Handler (Handler), ServerError, err500, errBody)
 
 newtype GhStatsM a =
   GhStatsM (ReaderT Connection (ExceptT Error IO) a)
@@ -47,6 +49,13 @@ runGhStatsM ::
   -> IO a
 runGhStatsM conn (GhStatsM m) =
   fmap (either throw id) . runExceptT . runReaderT m $ conn
+
+runGhStatsMToHandler ::
+  Connection
+  -> GhStatsM a
+  -> Handler a
+runGhStatsMToHandler conn (GhStatsM m) =
+  Handler . ExceptT . fmap (first toServantError) . runExceptT . runReaderT m $ conn
 
 newtype Count a = Count Int
   deriving (Eq, Show, FromField, ToField)
@@ -71,8 +80,21 @@ data Error =
   | GithubError GH.Error
   | TooManyResults Text
   | ConflictingVCData [CVD]
-  | ServantError ServerError
   deriving (Show)
+
+toServantError ::
+  Error
+  -> ServerError
+toServantError e =
+  let
+    dbMsg = "A database error occurred."
+    msg = case e of
+      SQLiteError _    -> dbMsg
+      GithubError _    -> "An error occurred fetching Github data."
+      TooManyResults _ -> dbMsg
+      ConflictingVCData _ -> dbMsg
+  in
+    err500 {errBody = msg}
 
 data CVD =
   forall a.
@@ -117,9 +139,6 @@ instance Exception Error
 -- Writing by hand as ServerError has a single constructor of the same name.
 class AsServerError e where
   _ServerError :: Prism' e ServerError
-
-instance AsServerError Error where
-  _ServerError = _ServantError
 
 instance AsServerError ServerError where
   _ServerError = id

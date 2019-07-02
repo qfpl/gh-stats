@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -11,19 +12,21 @@
 module GhStats.Db.Types where
 
 import           Control.Lens                     (makeLenses)
+import           Data.Foldable                    (foldrM)
 import           Data.Int                         (Int64)
 import           Data.Proxy                       (Proxy (Proxy))
 import           Data.Text                        (Text)
 import           Data.Time.Clock                  (UTCTime)
-import           Database.SQLite.Simple           (Query (Query), ToRow (toRow),
-                                                   field)
+import           Database.SQLite.Simple
+    (Query (Query), ToRow (toRow), field)
 import           Database.SQLite.Simple.FromField (FromField)
 import           Database.SQLite.Simple.FromRow   (FromRow (fromRow), RowParser)
 import           Database.SQLite.Simple.ToField   (ToField)
-import           GhStats.Types                    (Clones, Count, Forks,
-                                                   RepoStats, Stars, Uniques,
-                                                   Views)
 import qualified GitHub                           as GH
+import           Lucid
+    (HtmlT, ToHtml (toHtml, toHtmlRaw), table_, td_, th_, tr_)
+
+import GhStats.Types (Clones, Count, Forks, RepoStats, Stars, Uniques, Views)
 
 newtype Id a = Id Int64
   deriving (Eq, Show, FromField, ToField)
@@ -79,6 +82,19 @@ instance FromRow DbRepoStats where
   fromRow =
     DbRepoStats <$> field <*> nameField <*> field <*> field <*> field <*> field <*> field <*> field
       <*> field <*> field
+
+instance ToHtml [DbRepoStats] where
+  toHtml _drs =
+    let
+      headers = foldMap th_ ["Name", "Stars", "Forks"]
+    in
+      table_ (tr_ headers)
+
+  toHtmlRaw _drs =
+    let
+      headers = foldMap th_ ["Name", "Stars", "Forks"]
+    in
+      table_ (tr_ headers)
 
 data Pop a =
   Pop {

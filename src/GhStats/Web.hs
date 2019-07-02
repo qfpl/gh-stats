@@ -34,7 +34,6 @@ ghStatsApi = genericApi (Proxy :: Proxy GhStatsApi)
 
 ghStatsServer ::
   ( DbConstraints e r m
-  , AsServerError e
   , AsError e
   )
   => GhStatsApi (AsServerT m)
@@ -44,7 +43,6 @@ ghStatsServer = GhStatsApi
 
 reposServer ::
   ( DbConstraints e r m
-  , AsServerError e
   , AsError e
   )
   => m [DbRepoStats]

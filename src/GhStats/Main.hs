@@ -2,24 +2,25 @@
 
 module GhStats.Main where
 
-import           Control.Monad          ((<=<))
-import           Control.Monad.Except   (ExceptT, runExceptT)
-import           Control.Monad.IO.Class (liftIO)
-import           Control.Monad.Reader   (ReaderT, runReaderT)
-import qualified Data.ByteString.Lazy   as LBS
-import           Data.Foldable          (toList, traverse_)
-import           Data.Sv                (defaultEncodeOptions, encodeNamed)
-import           Database.SQLite.Simple (Connection, open)
-import qualified GitHub                 as GH
-import           Options.Applicative    (Parser, command, execParser, fullDesc,
-                                         header, help, helper, info, long,
-                                         metavar, progDesc, short, strOption,
-                                         subparser, (<**>))
+import           Control.Monad            ((<=<))
+import           Control.Monad.Except     (ExceptT, runExceptT)
+import           Control.Monad.IO.Class   (liftIO)
+import           Control.Monad.Reader     (ReaderT, runReaderT)
+import qualified Data.ByteString.Lazy     as LBS
+import           Data.Foldable            (toList, traverse_)
+import           Data.Sv                  (defaultEncodeOptions, encodeNamed)
+import           Database.SQLite.Simple   (Connection, open)
+import qualified GitHub                   as GH
+import           Network.Wai.Handler.Warp (run)
+import           Options.Applicative
+    (Parser, command, execParser, fullDesc, header, help, helper, info, long,
+    metavar, progDesc, short, strOption, subparser, (<**>))
+import           Servant.Server.Generic   (genericServeT)
 
-import           GhStats                (getHighLevelOrgStats, getReposForOrg,
-                                         toRepoStats)
-import           GhStats.Db             (initDb, insertRepoStatsTree)
-import           GhStats.Types          (Error, Token, highLevelRepoStatsEnc)
+import GhStats       (getHighLevelOrgStats, getReposForOrg, toRepoStats)
+import GhStats.Db    (initDb, insertRepoStatsTree)
+import GhStats.Types (Error, Token, highLevelRepoStatsEnc, runGhStatsMToHandler)
+import GhStats.Web   (ghStatsServer)
 
 go ::
   Command
@@ -27,7 +28,7 @@ go ::
 go = \case
   Csv orgName token -> csv orgName token
   UpdateDb orgName dbFile token -> updateDb orgName dbFile token
-  Serve _orgName _dbFile _token -> error "todo: serve"
+  Serve dbFile -> serveyMcServeFace dbFile
 
 csv ::
   GH.Name GH.Organization
@@ -35,13 +36,13 @@ csv ::
   -> IO ()
 csv orgName token =
   let
-    run :: ExceptT Error IO () -> IO ()
-    run = print <=< runExceptT
+    runM :: ExceptT Error IO () -> IO ()
+    runM = print <=< runExceptT
 
     enc = encodeNamed highLevelRepoStatsEnc defaultEncodeOptions
     dumpCsv = LBS.putStr . enc . toList
   in
-    run $ do
+    runM $ do
       es <- getHighLevelOrgStats token orgName
       liftIO $ dumpCsv es
 
@@ -61,14 +62,21 @@ updateDb' ::
   -> IO ()
 updateDb' conn orgName token =
   let
-    run :: ReaderT Connection (ExceptT Error IO) () -> IO ()
-    run = print <=< runExceptT . flip runReaderT conn
+    runM :: ReaderT Connection (ExceptT Error IO) () -> IO ()
+    runM = print <=< runExceptT . flip runReaderT conn
   in
-    run $ do
+    runM $ do
       initDb
       repos <- getReposForOrg orgName
-      -- repoStats <- getOrgStats token orgName
       traverse_ (insertRepoStatsTree <=< toRepoStats token) repos
+
+serveyMcServeFace ::
+  FilePath
+  -> IO ()
+serveyMcServeFace dbFile = do
+  conn <- open dbFile
+  let app = genericServeT (runGhStatsMToHandler conn) ghStatsServer
+  run 8000 app
 
 main ::
   IO ()
@@ -82,9 +90,9 @@ main =
         )
 
 data Command =
-  Csv (GH.Name GH.Organization) Token                -- ^ Output the per-repository summary as a CSV to stdout
+  Csv (GH.Name GH.Organization) Token                 -- ^ Output the per-repository summary as a CSV to stdout
   | UpdateDb (GH.Name GH.Organization) FilePath Token -- ^ Insert the latest summary into the SQLite DB
-  | Serve (GH.Name GH.Organization) FilePath Token    -- ^ Serve the latest summary as a web page
+  | Serve FilePath                                    -- ^ Serve the latest summary as a web page
   deriving (Eq, Show)
 
 dbParser ::
@@ -132,7 +140,7 @@ cmdParser =
       "Insert the latest summary into the SQLite DB, creating the DB if necessary."
 
     serveParser =
-      Serve <$> orgParser <*> dbParser <*> tokenParser
+      Serve <$> dbParser
     serveDesc =
       "Serve the latest summary as a web page."
   in
