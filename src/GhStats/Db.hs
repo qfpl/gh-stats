@@ -11,7 +11,6 @@ module GhStats.Db
   ( initDb
 
   -- * Inserts
-  , addToDb
   , insertClones
   , insertPop
   , insertPops
@@ -45,7 +44,7 @@ module GhStats.Db
 import           Control.Lens                 (view, (^.))
 import           Control.Lens.Indexed
     (FunctorWithIndex, TraversableWithIndex, imap)
-import           Control.Monad                (void, (<=<))
+import           Control.Monad                ((<=<))
 import           Control.Monad.Error.Lens     (throwing)
 import           Control.Monad.Except         (MonadError)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
@@ -169,26 +168,16 @@ initDb =
       , qClonesRepoNameCheck
       ]
 
-addToDb ::
-  ( DbConstraints e r m
-  , Traversable t
-  , AsError e
-  )
-  => t RepoStats
-  -> m ()
-addToDb =
-  void . traverse insertRepoStatsTree
-
 insertRepoStatsTree ::
   ( DbConstraints e r m
   , AsError e
   )
-  => RepoStats
+  => Id RepoStatsRun
+  -> RepoStats
   -> m (Id DbRepoStats)
-insertRepoStatsTree rs = do
+insertRepoStatsTree rsrId rs = do
   let
     repoName = rs ^. repoStatsName
-  rsrId <- insertRepoStatsRun
   rsId <- insertRepoStats $ toDbRepoStats rsrId rs
   insertReferrers rsId $ rs ^. repoStatsPopularReferrers
   insertPaths rsId $ rs ^. repoStatsPopularPaths

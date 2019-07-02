@@ -18,7 +18,7 @@ import           Options.Applicative
 import           Servant.Server.Generic   (genericServeT)
 
 import GhStats       (getHighLevelOrgStats, getReposForOrg, toRepoStats)
-import GhStats.Db    (initDb, insertRepoStatsTree)
+import GhStats.Db    (initDb, insertRepoStatsRun, insertRepoStatsTree)
 import GhStats.Types (Error, Token, highLevelRepoStatsEnc, runGhStatsMToHandler)
 import GhStats.Web   (ghStatsServer)
 
@@ -68,7 +68,8 @@ updateDb' conn orgName token =
     runM $ do
       initDb
       repos <- getReposForOrg orgName
-      traverse_ (insertRepoStatsTree <=< toRepoStats token) repos
+      rsrId <- insertRepoStatsRun
+      traverse_ (insertRepoStatsTree rsrId <=< toRepoStats token) repos
 
 serveyMcServeFace ::
   FilePath
