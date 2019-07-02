@@ -35,6 +35,7 @@ module GhStats.Db
   , selectViews
 
   -- * Helpers
+  , DbConstraints
   , toDbPath
   , toDbPops
   , toDbReferrer

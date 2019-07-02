@@ -1,42 +1,52 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module GhStats.Web where
 
 import Control.Monad.Except   (MonadError)
+import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader   (MonadReader)
 import Data.Proxy             (Proxy (Proxy))
-import Database.SQLite.Simple (Connection)
 import GHC.Generics           (Generic)
 import Lucid
-import Servant.API            ((:<|>), (:>), Get)
-import Servant.API.Generic    ((:-), AsApi, ToServant, fromServant)
+import Servant.API            ((:>), Get)
+import Servant.API.Generic
+    ((:-), ToServantApi, genericApi)
 import Servant.HTML.Lucid     (HTML)
-import Servant.Server         (ServerT)
+import Servant.Server.Generic (AsServerT)
 
-import GhStats.Db    (selectLatestRepoStats)
-import GhStats.Types (AsServerError, RepoStats, GhStatsM)
+import GhStats.Db       (DbConstraints, selectLatestRepoStats)
+import GhStats.Db.Types (DbRepoStats)
+import GhStats.Types
+    (AsSQLiteResponse, AsServerError, HasConnection, AsError)
 
 type ReposRoute =
-  "repos" :> Get '[HTML] [RepoStats]
+  "repos" :> Get '[HTML] [DbRepoStats]
 
-data GhStatsApi = GhStatsApi
-  { _ghStatsRepos :: ReposRoute
+data GhStatsApi route = GhStatsApi
+  { _ghStatsRepos :: route :- ReposRoute
   } deriving (Generic)
 
 ghStatsApi ::
-  Proxy GhStatsApi
-ghStatsApi = Proxy
+  Proxy (ToServantApi GhStatsApi)
+ghStatsApi = genericApi (Proxy :: Proxy GhStatsApi)
 
 ghStatsServer ::
-  ServerT GhStatsApi GhStatsM
-ghStatsServer =
-  reposServer
+  ( DbConstraints e r m
+  , AsServerError e
+  , AsError e
+  )
+  => GhStatsApi (AsServerT m)
+ghStatsServer = GhStatsApi
+  { _ghStatsRepos = reposServer
+  }
 
 reposServer ::
-  ServerT GhStatsApi GhStatsM
+  ( DbConstraints e r m
+  , AsServerError e
+  , AsError e
+  )
+  => m [DbRepoStats]
 reposServer =
   selectLatestRepoStats
-
