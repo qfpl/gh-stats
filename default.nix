@@ -26,7 +26,21 @@ let
     ];
   };
   hp = pkgs.haskellPackages;
-  drv = hp.callPackage ./gh-stats.nix {};
+
+  activate = pkgs.writeScriptBin "activate" ''
+    #!${pkgs.bash}/bin/bash -e
+
+    '';
+
+  postInstall = ''
+  ln -sv ${activate} $out/activate
+  '';
+
+  drvRaw = hp.callPackage ./gh-stats.nix {};
+  drv = pkgs.haskell.overrideDerivation drvRaw (drvRaw: {
+    postInstall = postInstall;
+  });
+
 
   shellDrv = pkgs.haskell.lib.overrideCabal drv (drv': {
     buildDepends =
