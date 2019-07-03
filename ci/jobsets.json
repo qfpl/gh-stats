@@ -1,0 +1,24 @@
+{
+    "enabled": 1,
+    "hidden": false,
+    "description": "jobsets",
+    "nixexprinput": "gh-stats",
+    "nixexprpath": "ci/jobsets.nix",
+    "checkinterval": 300,
+    "schedulingshares": 1,
+    "enableemail": true,
+    "emailoverride": "",
+    "keepnr": 5,
+    "inputs": {
+        "gh-stats": {
+          "type": "git",
+          "value": "https://github.com/qfpl/gh-stats master",
+          "emailresponsible": true
+        },
+        "nixpkgs": {
+          "type": "git",
+          "value": "https://github.com/NixOS/nixpkgs.git eccb90a2d997d65dc514253b441e515d8e0241c3",
+          "emailresponsible": false
+        }
+    }
+}
