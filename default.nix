@@ -32,15 +32,13 @@ let
 
     '';
 
-  postInstall = ''
-  ln -sv ${activate} $out/activate
-  '';
-
   drvRaw = hp.callPackage ./gh-stats.nix {};
-  drv = pkgs.haskell.overrideDerivation drvRaw (drvRaw: {
-    postInstall = postInstall;
+  drv = pkgs.stdenv.lib.overrideDerivation drvRaw (attrs: {
+    postInstall = ''
+      ${attrs.postInstall or ""}
+      ln -sv ${activate}/bin/activate $out/bin
+    '';
   });
-
 
   shellDrv = pkgs.haskell.lib.overrideCabal drv (drv': {
     buildDepends =
