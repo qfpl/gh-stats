@@ -11,7 +11,7 @@ let
     pkgs.lib.listToAttrs (
       pkgs.lib.concatMap (compiler:
         pkgs.lib.concatMap (system:
-          [{name = packageName + ":" + compiler + ":" + system; value = {inherit compiler system;};}]
+          [{name = "gh-stats:" + compiler + ":" + system; value = {inherit compiler system;};}]
         ) supportedSystems
       ) supportedCompilers
     );
