@@ -9,13 +9,15 @@ import           Control.Monad.Reader     (ReaderT, runReaderT)
 import qualified Data.ByteString.Lazy     as LBS
 import           Data.Foldable            (toList, traverse_)
 import           Data.Sv                  (defaultEncodeOptions, encodeNamed)
+import           Data.Word                (Word16)
 import           Database.SQLite.Simple   (Connection, open)
 import qualified GitHub                   as GH
 import           Network.Wai.Handler.Warp (run)
 import           Options.Applicative
-    (Parser, command, execParser, fullDesc, header, help, helper, info, long,
-    metavar, progDesc, short, strOption, subparser, (<**>))
+    (Parser, command, eitherReader, execParser, fullDesc, header, help, helper,
+    info, long, metavar, option, progDesc, short, strOption, subparser, (<**>))
 import           Servant.Server.Generic   (genericServeT)
+import           Text.Read                (readEither)
 
 import GhStats       (getHighLevelOrgStats, getReposForOrg, toRepoStats)
 import GhStats.Db    (initDb, insertRepoStatsRun, insertRepoStatsTree)
@@ -28,7 +30,7 @@ go ::
 go = \case
   Csv orgName token -> csv orgName token
   UpdateDb orgName dbFile token -> updateDb orgName dbFile token
-  Serve dbFile -> serveyMcServeFace dbFile
+  Serve dbFile port -> serveyMcServeFace dbFile port
 
 csv ::
   GH.Name GH.Organization
@@ -73,11 +75,12 @@ updateDb' conn orgName token =
 
 serveyMcServeFace ::
   FilePath
+  -> Port
   -> IO ()
-serveyMcServeFace dbFile = do
+serveyMcServeFace dbFile (Port port) = do
   conn <- open dbFile
   let app = genericServeT (runGhStatsMToHandler conn) ghStatsServer
-  run 8000 app
+  run (fromIntegral port) app
 
 main ::
   IO ()
@@ -90,10 +93,13 @@ main =
        <> header "gh-stats --- record and serve github statistics for an organisation"
         )
 
+newtype Port = Port Word16
+  deriving (Eq, Show)
+
 data Command =
   Csv (GH.Name GH.Organization) Token                 -- ^ Output the per-repository summary as a CSV to stdout
   | UpdateDb (GH.Name GH.Organization) FilePath Token -- ^ Insert the latest summary into the SQLite DB
-  | Serve FilePath                                    -- ^ Serve the latest summary as a web page
+  | Serve FilePath Port                               -- ^ Serve the latest summary as a web page
   deriving (Eq, Show)
 
 dbParser ::
@@ -126,6 +132,13 @@ tokenParser =
    <> help "Github OAuth token."
     )
 
+portParser :: Parser Port
+portParser =
+  let portHelp = help "TCP port to accept requests on"
+      mods = long "port" <> short 'p' <> metavar "PORT" <> portHelp
+      portReader = eitherReader (fmap Port . readEither)
+   in option portReader mods
+
 cmdParser ::
   Parser Command
 cmdParser =
@@ -141,7 +154,7 @@ cmdParser =
       "Insert the latest summary into the SQLite DB, creating the DB if necessary."
 
     serveParser =
-      Serve <$> dbParser
+      Serve <$> dbParser <*> portParser
     serveDesc =
       "Serve the latest summary as a web page."
   in
@@ -150,4 +163,3 @@ cmdParser =
      <> command "update" (info updateParser (progDesc updateDesc))
      <> command "serve" (info serveParser (progDesc serveDesc))
       )
-
