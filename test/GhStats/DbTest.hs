@@ -54,7 +54,7 @@ import GhStats.Db
     insertRepoStats, insertRepoStatsRun, insertVC, insertViews,
     selectClonesForRepoId, selectPop, selectPopsForRepoStats, selectRepoStats,
     selectVC, selectVCsForRepoId, selectViewsForRepoId, toDbPath, toDbPops,
-    toDbReferrer)
+    toDbReferrer, dropEarliestAndLatest)
 import GhStats.Db.Types
     (DbRepoStats (DbRepoStats, _dbRepoStatsName),
     HasTable (tableName, tableNameQ), Id (Id), Pop (Pop, popId, popRepoId),
@@ -178,7 +178,7 @@ testRepoNameTrigger conn = do
   drs <- forAll genDbRepoStats
   viewsNoRsId <- forAll genVC
   resetDb conn
-  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
+  (_, drsId) <- evalEither =<< insertRunAndStats conn drs
   let views = viewsNoRsId {_vcRepoId = drsId}
   evId <- hoozit conn $ insertVC @GH.Views views
   either checkIsOtherError bad evId
@@ -211,11 +211,11 @@ testVCRoundTrip _ conn = do
   drs <- forAllT genDbRepoStats
   vcBadId <- forAllT genVC
   resetDb conn
-  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
+  (_, drsId) <- evalEither =<< insertRunAndStats conn drs
   let vc = vcBadId {_vcRepoId = drsId, _vcRepoName = _dbRepoStatsName drs}
-  vcId <- (evalEither =<<) . hoozit conn $ insertVC @a vc
+  vcId <- evalEither <=< hoozit conn $ insertVC @a vc
   let vcExpected = vc {_vcId = Just vcId}
-  vcSelected <- (evalEither =<<) . hoozit conn $ selectVC vcId
+  vcSelected <- evalEither <=< hoozit conn $ selectVC vcId
   Just vcExpected === vcSelected
 
 type InsertVCFn a = Id DbRepoStats -> GH.Name GH.Repo -> a -> GhStatsM ()
@@ -248,11 +248,11 @@ testInsertVCsIdempotency gen ins sel gv conn = do
   vcs <- forAll gen
   resetDb conn
 
-  (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
+  (_, drsId) <- evalEither =<< insertRunAndStats conn drs
   let insAction = evalEither <=< hoozit conn $ ins drsId (_dbRepoStatsName drs) vcs
   sequence_ [insAction, insAction]
   dbVCs <- evalEither <=< hoozit conn $ sel drsId
-  vcs ^. gv.to V.toList === (vcToTrafficCount <$> dbVCs)
+  (vcs ^. gv.to V.toList & dropEarliestAndLatest) === (vcToTrafficCount <$> dbVCs)
 
 testInsertViewsOnlyInsertsNew ::
   Connection
@@ -289,7 +289,7 @@ testInsertVCsOnlyInsertsNew gen ins sel gv conn = do
     vcs1 = gv .~ tcvs1 $ vcs
   sequence_ [insertAction vcs1, insertAction vcs]
   dbViews <- evalEither <=< hoozit conn $ sel drsId
-  vcs ^. gv.to V.toList === (vcToTrafficCount <$> dbViews)
+  (vcs ^. gv.to V.toList & dropEarliestAndLatest) === (vcToTrafficCount <$> dbViews)
 
 testInsertViewsConflicts ::
   Connection
@@ -338,7 +338,7 @@ testInsertVCsConflicts gen ins sel ltcs conn = do
   traverse_ checkConflict $ insModError ^? _ConflictingVCData & fromMaybe []
 
   dbViews1 <- evalEither <=< hoozit conn $ sel drsId1
-  vcs ^. ltcs.to V.toList === (vcToTrafficCount <$> dbViews1)
+  (vcs ^. ltcs.to V.toList & dropEarliestAndLatest) === (vcToTrafficCount <$> dbViews1)
 
   dbViews2 <- evalEither <=< hoozit conn $ sel drsId2
   assert $ null dbViews2

@@ -35,6 +35,7 @@ module GhStats.Db
 
   -- * Helpers
   , DbConstraints
+  , dropEarliestAndLatest
   , toDbPath
   , toDbPops
   , toDbReferrer
@@ -208,10 +209,8 @@ insertViews ::
   -> GH.Name GH.Repo
   -> GH.Views
   -> m ()
-insertViews rsId rsName =
-  maybe (pure ()) ins . NE.nonEmpty . toList . GH.views
-  where
-    ins = insertVCs (Proxy :: Proxy GH.Views) rsId rsName
+insertViews =
+  insertVCs GH.views (Proxy :: Proxy GH.Views)
 
 insertClones ::
   ( DbConstraints e r m
@@ -221,20 +220,39 @@ insertClones ::
   -> GH.Name GH.Repo
   -> GH.Clones
   -> m ()
-insertClones rsId rsName =
-  maybe (pure ()) ins . NE.nonEmpty . dropHeadAndTail . toList . GH.clones
-  where
-    ins = insertVCs (Proxy :: Proxy GH.Clones) rsId rsName
-    dropHeadAndTail xs =
-      let
-        cmp tc1 tc2 = compare (GH.trafficCountTimestamp tc1) (GH.trafficCountTimestamp tc2)
-        sortEm = sortBy cmp
-        headless = drop 1 . sortEm $ xs
-        desired = length headless - 1
-      in
-        take desired headless
+insertClones =
+  insertVCs GH.clones (Proxy :: Proxy GH.Clones)
 
 insertVCs ::
+  ( DbConstraints e r m
+  , AsError e
+  , Foldable t
+  , HasTable a
+  )
+  => (vc -> t (GH.TrafficCount te))
+  -> Proxy a
+  -> Id DbRepoStats
+  -> GH.Name GH.Repo
+  -> vc
+  -> m ()
+insertVCs tcsAccessor p rsId rsName =
+  maybe (pure ()) ins . NE.nonEmpty . dropEarliestAndLatest . toList . tcsAccessor
+  where
+    ins = insertVCs' p rsId rsName
+
+dropEarliestAndLatest ::
+  [GH.TrafficCount e]
+  -> [GH.TrafficCount e]
+dropEarliestAndLatest xs =
+  let
+    cmp tc1 tc2 = compare (GH.trafficCountTimestamp tc1) (GH.trafficCountTimestamp tc2)
+    sortEm = sortBy cmp
+    headless = drop 1 . sortEm $ xs
+    desired = length headless - 1
+  in
+    take desired headless
+
+insertVCs' ::
   forall a te e r m.
   ( DbConstraints e r m
   , AsError e
@@ -245,7 +263,7 @@ insertVCs ::
   -> GH.Name GH.Repo
   -> NonEmpty (GH.TrafficCount te)
   -> m ()
-insertVCs p rsId repoName tcvs = do
+insertVCs' p rsId repoName tcvs = do
   let
     dateRange = findDateRange tcvs
     toViewMapElem GH.TrafficCount{GH.trafficCountTimestamp, GH.trafficCount, GH.trafficCountUniques} =
