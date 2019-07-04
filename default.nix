@@ -40,7 +40,7 @@ let
     '';
   });
 
-  shellDrv = pkgs.haskell.lib.overrideCabal drv (drv': {
+  shellDrv = pkgs.haskell.lib.overrideCabal drvRaw (drv': {
     buildDepends =
       (drv'.buildDepends or []) ++
       [ (hp.hoogleLocal {
