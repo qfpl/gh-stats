@@ -51,6 +51,7 @@ import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import           Control.Monad.Reader         (MonadReader, ask)
 import           Data.Bool                    (bool)
 import           Data.Foldable                (Foldable, toList, traverse_)
+import           Data.List                    (sortBy)
 import           Data.List.NonEmpty           (NonEmpty)
 import qualified Data.List.NonEmpty           as NE
 import qualified Data.Map.Merge.Strict        as M
@@ -221,9 +222,17 @@ insertClones ::
   -> GH.Clones
   -> m ()
 insertClones rsId rsName =
-  maybe (pure ()) ins . NE.nonEmpty . toList . GH.clones
+  maybe (pure ()) ins . NE.nonEmpty . dropHeadAndTail . toList . GH.clones
   where
     ins = insertVCs (Proxy :: Proxy GH.Clones) rsId rsName
+    dropHeadAndTail xs =
+      let
+        cmp tc1 tc2 = compare (GH.trafficCountTimestamp tc1) (GH.trafficCountTimestamp tc2)
+        sortEm = sortBy cmp
+        headless = drop 1 . sortEm $ xs
+        desired = length headless - 1
+      in
+        take desired headless
 
 insertVCs ::
   forall a te e r m.
