@@ -78,7 +78,7 @@ serveyMcServeFace ::
   -> Port
   -> IO ()
 serveyMcServeFace dbFile (Port port) = do
-  conn <- open dbFile
+  conn <- open $ "file:" <> dbFile <> "?mode=ro"
   let app = genericServeT (runGhStatsMToHandler conn) ghStatsServer
   run (fromIntegral port) app
 
