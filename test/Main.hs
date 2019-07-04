@@ -3,7 +3,7 @@ module Main where
 import           Test.Tasty             (TestTree, defaultMain, testGroup)
 
 import           Control.Monad          (when)
-import           Database.SQLite.Simple (Connection, open)
+import           Database.SQLite.Simple (Connection, open, close)
 import           System.Directory       (doesFileExist, removeFile)
 
 import           GhStats.Db             (initDb)
@@ -17,6 +17,7 @@ main = do
   conn <- open testDbPath
   runGhStatsM conn initDb
   defaultMain $ tests conn
+  close conn
 
 testDbPath :: FilePath
 testDbPath = "test.sqlite"
