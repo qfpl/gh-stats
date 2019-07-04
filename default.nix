@@ -30,6 +30,7 @@ let
   activate = pkgs.writeScriptBin "activate" ''
     #!${pkgs.bash}/bin/bash -e
 
+    systemctl restart gh-stats-server.service
     '';
 
   drvRaw = hp.callPackage ./gh-stats.nix {};
