@@ -61,7 +61,7 @@ import qualified Data.Map.Strict              as M
 import           Data.Proxy                   (Proxy (Proxy))
 import qualified Data.Text                    as T
 import           Data.Time.Clock              (UTCTime)
-import qualified Data.Validation              as V
+import           Data.Validation              (Validation (Failure), toEither)
 import           Database.SQLite.Simple
     (Connection, FromRow, Only (Only), Query (Query), ToRow, execute,
     executeMany, execute_, lastInsertRowId, query, query_)
@@ -271,7 +271,7 @@ insertVCs' p rsId repoName tcvs = do
     new = M.fromList . NE.toList $ toViewMapElem <$> tcvs
     alwaysSkip = M.filterAMissing $ \_ _ -> pure False
     alwaysInsert = M.filterAMissing $ \_ _ -> pure True
-    liftToInsertMap = either (throwing _ConflictingVCData) pure . V.toEither
+    liftToInsertMap = either (throwing _ConflictingVCData) pure . toEither
     toInsertList = fmap (\((n,t),(c,u)) -> VC Nothing t c u rsId n) . M.toList
   existing <- selectVCsBetweenDates @a dateRange repoName
   insertMap <- liftToInsertMap $ M.mergeA alwaysSkip alwaysInsert checkOverlap existing new
@@ -311,14 +311,14 @@ selectVCsForRepoId drsId =
       query conn q (Only drsId)
 
 checkOverlap ::
-  M.WhenMatched (V.Validation [CVD])
+  M.WhenMatched (Validation [CVD])
                 (GH.Name GH.Repo, UTCTime)
                 (Count a, Uniques a)
                 (Count a, Uniques a)
                 (Count a, Uniques a)
 checkOverlap =
   M.zipWithMaybeAMatched $ \(n,t) (c1,u1) (c2,u2) ->
-    bool (V.Failure [CVD n t c1 u1 c2 u2])
+    bool (Failure [CVD n t c1 u1 c2 u2])
          (pure Nothing)
          (c1 == c2 && u1 == u2)
 
