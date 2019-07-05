@@ -2,13 +2,17 @@
 
 module GhStats.Main where
 
+import           Control.Exception        (throw)
 import           Control.Monad            ((<=<))
 import           Control.Monad.Except     (ExceptT, runExceptT)
 import           Control.Monad.IO.Class   (liftIO)
 import           Control.Monad.Reader     (ReaderT, runReaderT)
 import qualified Data.ByteString.Lazy     as LBS
 import           Data.Foldable            (toList, traverse_)
+import           Data.Functor.Compose     (Compose (Compose, getCompose))
+import           Data.List.NonEmpty       (NonEmpty)
 import           Data.Sv                  (defaultEncodeOptions, encodeNamed)
+import           Data.Validation          (Validation, validationNel, validation)
 import           Data.Word                (Word16)
 import           Database.SQLite.Simple   (Connection, open)
 import qualified GitHub                   as GH
@@ -64,14 +68,25 @@ updateDb' ::
   -> IO ()
 updateDb' conn orgName token =
   let
-    runM :: ReaderT Connection (ExceptT Error IO) () -> IO ()
-    runM = print <=< runExceptT . flip runReaderT conn
+    runM :: ReaderT Connection (ExceptT Error IO) a -> IO a
+    runM = either throw pure <=< runExceptT . flip runReaderT conn
+
+    runToValidation :: ReaderT Connection (ExceptT Error IO) a -> IO (Validation (NonEmpty Error) a)
+    runToValidation =
+      fmap validationNel . runExceptT . flip runReaderT conn
+
+    ins rsrId = insertRepoStatsTree rsrId <=< toRepoStats token
+
+    printErrors es = do
+      putStrLn "Encountered the following errors:"
+      traverse_ ((putStr "  " >>) . print) es
   in
-    runM $ do
-      initDb
-      repos <- getReposForOrg orgName
-      rsrId <- insertRepoStatsRun
-      traverse_ (insertRepoStatsTree rsrId <=< toRepoStats token) repos
+    do
+      runM initDb
+      repos <- runM $ getReposForOrg orgName
+      rsrId <- runM insertRepoStatsRun
+      res <- getCompose $ traverse (Compose . runToValidation . ins rsrId) repos
+      validation printErrors (const $ pure ()) res
 
 serveyMcServeFace ::
   FilePath
