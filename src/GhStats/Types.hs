@@ -16,21 +16,23 @@ module GhStats.Types where
 import           Control.Exception                  (Exception, throw)
 import           Control.Lens
     (Getter, Lens', Prism', lens, makeClassyPrisms, makeLenses, makeWrapped,
-    prism, to, (&), (^.), _Wrapped)
+    prism, to, ( # ), (&), (^.), _Wrapped)
 import           Control.Monad.Except
     (ExceptT (ExceptT), MonadError, runExceptT)
-import           Control.Monad.IO.Class             (MonadIO)
+import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Monad.Reader
-    (MonadReader, ReaderT, runReaderT)
+    (MonadReader, ReaderT, asks, runReaderT)
 import           Data.Bifunctor                     (first)
 import           Data.ByteString                    (ByteString)
 import qualified Data.ByteString.Lazy.Char8         as BSL8
+import           Data.List.NonEmpty                 (NonEmpty)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
 import qualified Data.Sv.Encode                     as E
 import           Data.Text                          (Text)
 import           Data.Text.Encoding                 (encodeUtf8)
 import           Data.Time.Clock                    (UTCTime)
+import           Data.Validation                    (Validation, validationNel)
 import           Data.Vector                        (Vector)
 import           Database.SQLite.Simple             (Connection, ToRow (toRow))
 import           Database.SQLite.Simple.FromField   (FromField)
@@ -135,6 +137,19 @@ cvdExistingUniques =
 
 makeClassyPrisms ''Error
 makeClassyPrisms ''SQLiteResponse
+
+ghStatsMToValidationM ::
+  ( Monad m
+  , MonadReader r m
+  , HasConnection r
+  , AsError e
+  , MonadIO m
+  )
+  => GhStatsM a
+  -> m (Validation (NonEmpty e) a)
+ghStatsMToValidationM (GhStatsM m) = do
+  conn <- asks (^. connection)
+  liftIO . fmap (validationNel . first (_Error #)) . runExceptT . flip runReaderT conn $ m
 
 instance Exception Error
 
