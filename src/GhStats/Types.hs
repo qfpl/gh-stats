@@ -151,6 +151,15 @@ ghStatsMToValidationM (GhStatsM m) = do
   conn <- asks (^. connection)
   liftIO . fmap (validationNel . first (_Error #)) . runExceptT . flip runReaderT conn $ m
 
+ghStatsMToValidationIO ::
+  ( AsError e
+  )
+  => Connection
+  -> GhStatsM a
+  -> IO (Validation (NonEmpty e) a)
+ghStatsMToValidationIO conn ghStatsM =
+  runReaderT (ghStatsMToValidationM ghStatsM) conn
+
 instance Exception Error
 
 -- Writing by hand as ServerError has a single constructor of the same name.

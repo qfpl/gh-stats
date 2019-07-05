@@ -18,6 +18,7 @@ module GhStats.Db
   , insertRepoStats
   , insertRepoStatsRun
   , insertRepoStatsTree
+  , insertRepoStatsTreeValidation
   , insertVC
   , insertViews
 
@@ -74,7 +75,7 @@ import GhStats.Types
     AsSQLiteResponse (_SQLiteResponse), CVD (CVD), Count (Count),
     HasConnection (connection), RepoStats (..), Uniques (Uniques),
     repoStatsClones, repoStatsName, repoStatsPopularPaths,
-    repoStatsPopularReferrers, repoStatsViews)
+    repoStatsPopularReferrers, repoStatsViews, ghStatsMToValidationM)
 
 type DbConstraints e r m =
   ( MonadReader r m
@@ -187,6 +188,17 @@ insertRepoStatsTree rsrId rs = do
   insertClones rsId repoName (rs ^. repoStatsClones)
   pure rsId
 
+insertRepoStatsTreeValidation ::
+  ( MonadReader r m
+  , HasConnection r
+  , AsError e
+  , MonadIO m
+  )
+  => Id RepoStatsRun
+  -> RepoStats
+  -> m (Validation (NonEmpty e) (Id DbRepoStats))
+insertRepoStatsTreeValidation rsrId rs =
+  ghStatsMToValidationM $ insertRepoStatsTree rsrId rs
 
 insertRepoStatsRun ::
   DbConstraints e r m

@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module GhStats.Main where
 
@@ -12,7 +13,8 @@ import           Data.Foldable            (toList, traverse_)
 import           Data.Functor.Compose     (Compose (Compose, getCompose))
 import           Data.List.NonEmpty       (NonEmpty)
 import           Data.Sv                  (defaultEncodeOptions, encodeNamed)
-import           Data.Validation          (Validation, validationNel, validation)
+import           Data.Validation
+    (Validation, validation, validationNel)
 import           Data.Word                (Word16)
 import           Database.SQLite.Simple   (Connection, open)
 import qualified GitHub                   as GH
@@ -23,10 +25,12 @@ import           Options.Applicative
 import           Servant.Server.Generic   (genericServeT)
 import           Text.Read                (readEither)
 
-import GhStats       (getHighLevelOrgStats, getReposForOrg, toRepoStats)
-import GhStats.Db    (initDb, insertRepoStatsRun, insertRepoStatsTree)
-import GhStats.Types (Error, Token, highLevelRepoStatsEnc, runGhStatsMToHandler)
-import GhStats.Web   (ghStatsServer)
+import GhStats          (getHighLevelOrgStats, getReposForOrg, toRepoStats)
+import GhStats.Db       (initDb, insertRepoStatsRun, insertRepoStatsTree)
+import GhStats.Db.Types (Id, RepoStatsRun, DbRepoStats)
+import GhStats.Types
+    (Error, Token, AsError, AsGhError, highLevelRepoStatsEnc, runGhStatsMToHandler, ghStatsMToValidationIO)
+import GhStats.Web      (ghStatsServer)
 
 go ::
   Command
@@ -71,12 +75,6 @@ updateDb' conn orgName token =
     runM :: ReaderT Connection (ExceptT Error IO) a -> IO a
     runM = either throw pure <=< runExceptT . flip runReaderT conn
 
-    runToValidation :: ReaderT Connection (ExceptT Error IO) a -> IO (Validation (NonEmpty Error) a)
-    runToValidation =
-      fmap validationNel . runExceptT . flip runReaderT conn
-
-    ins rsrId = insertRepoStatsTree rsrId <=< toRepoStats token
-
     printErrors es = do
       putStrLn "Encountered the following errors:"
       traverse_ ((putStr "  " >>) . print) es
@@ -85,8 +83,29 @@ updateDb' conn orgName token =
       runM initDb
       repos <- runM $ getReposForOrg orgName
       rsrId <- runM insertRepoStatsRun
-      res <- getCompose $ traverse (Compose . runToValidation . ins rsrId) repos
+      res <- insertReposValidation conn token rsrId repos
       validation printErrors (const $ pure ()) res
+
+insertReposValidation ::
+  forall t e.
+  ( Traversable t
+  , AsGhError e
+  , AsError e
+  )
+  => Connection
+  -> Token
+  -> Id RepoStatsRun
+  -> t GH.Repo
+  -> IO (Validation (NonEmpty e) (t (Id DbRepoStats)))
+insertReposValidation conn token rsrId =
+  let
+    ins ::
+      GH.Repo
+      -> IO (Validation (NonEmpty e) (Id DbRepoStats))
+    ins =
+      ghStatsMToValidationIO conn . insertRepoStatsTree rsrId <=< toRepoStats token
+  in
+    getCompose . traverse (Compose . ins)
 
 serveyMcServeFace ::
   FilePath
