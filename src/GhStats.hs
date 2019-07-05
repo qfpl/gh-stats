@@ -13,13 +13,12 @@ import           Data.Vector                    (Vector)
 import qualified GitHub                         as GH
 import           GitHub.Data.Traffic            (Period (Day))
 import           GitHub.Endpoints.Repos         (organizationRepos)
-import           GitHub.Endpoints.Repos.Traffic (clones', popularPaths',
-                                                 popularReferrers', views')
+import           GitHub.Endpoints.Repos.Traffic
+    (clones', popularPaths', popularReferrers', views')
 
-import           GhStats.Types                  (AsGhError, Forks (Forks), HighLevelRepoStats (HighLevelRepoStats),
-                                                 RepoStats (RepoStats),
-                                                 Stars (Stars),
-                                                 Token (getToken), _GhError)
+import GhStats.Types
+    (AsGhError, Forks (Forks), HighLevelRepoStats (HighLevelRepoStats),
+    RepoStats (RepoStats), Stars (Stars), Token (getToken), _GhError)
 
 
 type GhConstraints e m = (MonadIO m, MonadError e m, AsGhError e)
