@@ -2,29 +2,26 @@
 
 module GhStats.Gens where
 
-import           Hedgehog         (Gen, GenT, MonadGen, MonadTest, Property,
-                                   PropertyT, annotateShow, evalEither, evalM,
-                                   failure, forAll, property, success, tripping,
-                                   (===))
-import qualified Hedgehog.Gen     as Gen
-import qualified Hedgehog.Range   as Range
+import           Hedgehog
+    (Gen, GenT, MonadGen, MonadTest, Property, PropertyT, annotateShow,
+    evalEither, evalM, failure, forAll, property, success, tripping, (===))
+import qualified Hedgehog.Gen   as Gen
+import qualified Hedgehog.Range as Range
 
-import qualified Data.Map         as M
-import           Data.Time        (UTCTime (UTCTime), fromGregorian,
-                                   secondsToDiffTime)
-import qualified Data.Vector      as V
-import qualified GitHub           as GH
+import qualified Data.Map    as M
+import           Data.Time
+    (UTCTime (UTCTime), fromGregorian, secondsToDiffTime)
+import qualified Data.Vector as V
+import qualified GitHub      as GH
 
-import           GhStats.Db.Types (DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
-                                   HasTable (tableName, tableNameQ), Id (Id),
-                                   Pop (Pop, popId, popRepoId),
-                                   Position (Position),
-                                   VC (VC, _vcId, _vcRepoId, _vcRepoName))
-import           GhStats.Types    (AsSQLiteResponse, Count (Count),
-                                   Error (SQLiteError), Forks (..),
-                                   GhStatsM (GhStatsM), HasConnection,
-                                   RepoStats (RepoStats), Stars (..), Uniques (Uniques),
-                                   runGhStatsM)
+import GhStats.Db.Types
+    (DbRepoStats (DbRepoStats, _dbRepoStatsId, _dbRepoStatsName),
+    HasTable (tableName, tableNameQ), Id (Id), Pop (Pop, popId, popRepoId),
+    Position (Position), VC (VC, _vcId, _vcRepoId, _vcRepoName))
+import GhStats.Types
+    (AsSQLiteResponse, Count (Count), Error (SQLiteError), Forks (..),
+    GhStatsM (GhStatsM), HasConnection, RepoStats (RepoStats), Stars (..),
+    Uniques (Uniques), runGhStatsM)
 
 genDbRepoStats ::
    MonadGen m
