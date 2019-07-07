@@ -87,23 +87,18 @@ updateDb' conn orgName token =
       validation printErrors (const $ pure ()) res
 
 insertReposValidation ::
-  forall t e.
+  forall t.
   ( Traversable t
-  , AsGhError e
-  , AsError e
   )
   => Connection
   -> Token
   -> Id RepoStatsRun
   -> t GH.Repo
-  -> IO (Validation (NonEmpty e) (t (Id DbRepoStats)))
+  -> IO (Validation (NonEmpty Error) (t (Id DbRepoStats)))
 insertReposValidation conn token rsrId =
   let
-    ins ::
-      GH.Repo
-      -> IO (Validation (NonEmpty e) (Id DbRepoStats))
     ins =
-      ghStatsMToValidationIO conn . insertRepoStatsTree rsrId <=< toRepoStats token
+      ghStatsMToValidationIO conn . (insertRepoStatsTree rsrId <=< toRepoStats token)
   in
     getCompose . traverse (Compose . ins)
 
