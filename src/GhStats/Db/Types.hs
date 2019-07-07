@@ -16,7 +16,6 @@ module GhStats.Db.Types where
 
 import           Control.Lens
     (makeLenses, (&), (^.), _Wrapped)
-import           Data.Foldable                    (foldrM)
 import           Data.Int                         (Int64)
 import           Data.Proxy                       (Proxy (Proxy))
 import           Data.Text                        (Text)
@@ -28,7 +27,7 @@ import           Database.SQLite.Simple.FromRow   (FromRow (fromRow), RowParser)
 import           Database.SQLite.Simple.ToField   (ToField)
 import qualified GitHub                           as GH
 import           Lucid
-    (HtmlT, ToHtml (toHtml, toHtmlRaw), table_, td_, th_, tr_)
+    (ToHtml (toHtml, toHtmlRaw), table_, td_, th_, tr_)
 
 import GhStats.Types (Clones, Count, Forks, RepoStats, Stars, Uniques, Views)
 

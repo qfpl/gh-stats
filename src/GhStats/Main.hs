@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module GhStats.Main where
@@ -14,7 +14,7 @@ import           Data.Functor.Compose     (Compose (Compose, getCompose))
 import           Data.List.NonEmpty       (NonEmpty)
 import           Data.Sv                  (defaultEncodeOptions, encodeNamed)
 import           Data.Validation
-    (Validation, validation, validationNel)
+    (Validation, validation)
 import           Data.Word                (Word16)
 import           Database.SQLite.Simple   (Connection, open)
 import qualified GitHub                   as GH
@@ -27,9 +27,10 @@ import           Text.Read                (readEither)
 
 import GhStats          (getHighLevelOrgStats, getReposForOrg, toRepoStats)
 import GhStats.Db       (initDb, insertRepoStatsRun, insertRepoStatsTree)
-import GhStats.Db.Types (Id, RepoStatsRun, DbRepoStats)
+import GhStats.Db.Types (DbRepoStats, Id, RepoStatsRun)
 import GhStats.Types
-    (Error, Token, AsError, AsGhError, highLevelRepoStatsEnc, runGhStatsMToHandler, ghStatsMToValidationIO)
+    (Error, Token, ghStatsMToValidationIO, highLevelRepoStatsEnc,
+    runGhStatsMToHandler)
 import GhStats.Web      (ghStatsServer)
 
 go ::

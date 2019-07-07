@@ -1,25 +1,19 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds     #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeOperators #-}
 
 module GhStats.Web where
 
-import Control.Monad.Except   (MonadError)
-import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Reader   (MonadReader)
 import Data.Proxy             (Proxy (Proxy))
 import GHC.Generics           (Generic)
-import Lucid
 import Servant.API            ((:>), Get)
-import Servant.API.Generic
-    ((:-), ToServantApi, genericApi)
+import Servant.API.Generic    ((:-), ToServantApi, genericApi)
 import Servant.HTML.Lucid     (HTML)
 import Servant.Server.Generic (AsServerT)
 
 import GhStats.Db       (DbConstraints, selectLatestRepoStats)
 import GhStats.Db.Types (DbRepoStats)
-import GhStats.Types
-    (AsSQLiteResponse, AsServerError, HasConnection, AsError)
+import GhStats.Types    (AsError)
 
 type ReposRoute =
   "repos" :> Get '[HTML] [DbRepoStats]
