@@ -23,7 +23,7 @@ import           GhStats.Db.Types (DbRepoStats (DbRepoStats, _dbRepoStatsId, _db
 import           GhStats.Types    (AsSQLiteResponse, Count (Count),
                                    Error (SQLiteError), Forks (..),
                                    GhStatsM (GhStatsM), HasConnection,
-                                   RepoStats, Stars (..), Uniques (Uniques),
+                                   RepoStats (RepoStats), Stars (..), Uniques (Uniques),
                                    runGhStatsM)
 
 genDbRepoStats ::
@@ -176,3 +176,17 @@ genTrafficCount ::
   => m (GH.TrafficCount a)
 genTrafficCount =
   GH.TrafficCount <$> genUTCTime <*> genIntCount <*> genIntCount
+
+genRepoStats ::
+  MonadGen m
+  => m RepoStats
+genRepoStats =
+  RepoStats
+  <$> genName
+  <*> genUTCTime
+  <*> (Stars <$> genIntCount)
+  <*> (Forks <$> genIntCount)
+  <*> (V.fromList <$> genReferrers)
+  <*> (V.fromList <$> genPaths)
+  <*> genGhViews
+  <*> genGhClones
