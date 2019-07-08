@@ -13,7 +13,8 @@ module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
 import           Control.Lens
-    (Getter, Lens', mapped, to, (%~), (&), (+~), (.~), (^.), (^?), _Wrapped, (?~))
+    (Getter, Lens', mapped, to, (%~), (&), (+~), (.~), (?~), (^.), (^?), (<&>),
+    _Wrapped, (#), Traversal', (^..))
 import           Control.Lens.Extras                (is)
 import           Control.Monad
     (join, void, zipWithM_, (<=<))
@@ -31,6 +32,7 @@ import           Data.Proxy                         (Proxy (Proxy))
 import           Data.Text                          (Text)
 import           Data.Time
     (UTCTime (UTCTime), fromGregorian, secondsToDiffTime)
+import           Data.Validation                    (Validation, validation, _Success, _Failure)
 import           Data.Vector                        (Vector)
 import qualified Data.Vector                        as V
 import           Database.SQLite.Simple             (Connection, execute_)
@@ -50,11 +52,12 @@ import           Test.Tasty                 (TestName, TestTree, testGroup)
 import           Test.Tasty.Hedgehog        (testProperty)
 
 import GhStats.Db
-    (initDb, insertClones, insertPop, insertPops, insertReferrers,
-    insertRepoStats, insertRepoStatsRun, insertVC, insertViews,
+    (dropEarliestAndLatest, initDb, insertClones, insertPop, insertPops,
+    insertReferrers, insertRepoStats, insertRepoStatsRun, insertRepoStatsTree,
+    insertRepoStatsesValidation, insertVC, insertViews,
     selectClonesForRepoId, selectPop, selectPopsForRepoStats, selectRepoStats,
     selectVC, selectVCsForRepoId, selectViewsForRepoId, toDbPath, toDbPops,
-    toDbReferrer, dropEarliestAndLatest)
+    toDbReferrer)
 import GhStats.Db.Types
     (DbRepoStats (DbRepoStats, _dbRepoStatsName),
     HasTable (tableName, tableNameQ), Id (Id), Pop (Pop, popId, popRepoId),
@@ -62,10 +65,11 @@ import GhStats.Db.Types
     VC (VC, _vcCount, _vcId, _vcRepoId, _vcRepoName, _vcTimestamp, _vcUniques),
     dbRepoStatsId, dbRepoStatsName, dbRepoStatsRunId)
 import GhStats.Types
-    (AsSQLiteResponse, CVD, Count (Count), Error (SQLiteError), Forks (..),
+    (ValResult, AsSQLiteResponse, CVD, Count (Count), Error (SQLiteError), Forks (..),
     GhStatsM (GhStatsM), HasConnection, RepoStats, Stars (..),
     Uniques (Uniques), cvdExistingCount, cvdExistingUniques, cvdNewCount,
-    cvdNewUniques, repoStatsName, runGhStatsM, _ConflictingVCData)
+    cvdNewUniques, repoStatsName, repoStatsViews, runGhStatsM,
+    _ConflictingVCData)
 
 import GhStats.Gens
 import GhStats.Test (GhStatsPropReaderT, GhStatsPropertyT, runGhStatsPropertyT)
@@ -90,6 +94,7 @@ testDb conn =
   , ("insertClones only inserts new", testInsertClonesOnlyInsertsNew)
   , ("insertViews returns list of conflicts", testInsertViewsConflicts)
   , ("insertClones returns list of conflicts", testInsertClonesConflicts)
+  , ("insertRepoStatsesValidation collects all errors", testInsertTreeValidation)
   ]
   where
     mkProp (name, prop) =
@@ -317,31 +322,70 @@ testInsertVCsConflicts ::
 testInsertVCsConflicts gen ins sel ltcs conn = do
   drs1 <- forAll genDbRepoStats
   drs2' <- forAll genDbRepoStats
-  vcs <- forAll gen
+  vc <- forAll gen
   resetDb conn
 
   let
     repoName = drs1 ^. dbRepoStatsName
     drs2 = dbRepoStatsName .~ repoName $ drs2'
-    moddedVCs = vcs & ltcs.mapped.trafficCount +~ 1 & ltcs.mapped.trafficCountUniques +~ 2
+    moddedVCs = makeConflicting ltcs vc
     ensureFailed = either pure $ error "Expected insertion of conflicting view data to fail"
-    checkConflict cvd = do
-      cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ succ)
-      cvd ^. cvdNewUniques === (cvd ^. cvdExistingUniques & _Wrapped %~ (+2))
 
   (_, drsId1) <- (evalEither =<<) $ insertRunAndStats conn drs1
   (_, drsId2) <- (evalEither =<<) $ insertRunAndStats conn drs2
-  evalEither <=< hoozit conn $ ins drsId1 repoName vcs
+  evalEither <=< hoozit conn $ ins drsId1 repoName vc
   insModError <- evalM . ensureFailed <=< hoozit conn $ ins drsId2 repoName moddedVCs
 
-  assert $ is _ConflictingVCData insModError
-  traverse_ checkConflict $ insModError ^? _ConflictingVCData & fromMaybe []
+  evalM $ checkConflicts insModError
 
   dbViews1 <- evalEither <=< hoozit conn $ sel drsId1
-  (vcs ^. ltcs.to V.toList & dropEarliestAndLatest) === (vcToTrafficCount <$> dbViews1)
+  (vc ^. ltcs.to V.toList & dropEarliestAndLatest) === (vcToTrafficCount <$> dbViews1)
 
   dbViews2 <- evalEither <=< hoozit conn $ sel drsId2
   assert $ null dbViews2
+
+testInsertTreeValidation ::
+  Connection
+  -> PropertyT IO ()
+testInsertTreeValidation conn = do
+  rss <- (fmap . fmap) (_Success #) $ forAll genRepoStatses
+  resetDb conn
+
+  let
+    ghViews ::
+      Traversal' [ValResult Error RepoStats] (Vector (GH.TrafficCount GH.View))
+    ghViews =
+      traverse._Success.repoStatsViews.views
+
+    conflicting =
+      makeConflicting ghViews rss
+
+    expectedErrorCount =
+      rss ^.. ghViews & length
+
+  rsrId <- evalEither <=< hoozit conn $ insertRepoStatsRun
+  liftIO $ insertRepoStatsesValidation conn rsrId rss
+  vcs <- liftIO . fmap sequenceA $ insertRepoStatsesValidation conn rsrId conflicting
+  evalM $ validation (traverse_ checkConflicts) (const $ error "Expecting failure") vcs
+  (vcs ^? _Failure <&> length) === Just expectedErrorCount
+
+makeConflicting ::
+  Traversal' a (Vector (GH.TrafficCount b))
+  -> a
+  -> a
+makeConflicting ltcs vc =
+  vc & ltcs.mapped.trafficCount +~ 1 & ltcs.mapped.trafficCountUniques +~ 2
+
+checkConflicts ::
+  Error
+  -> PropertyT IO ()
+checkConflicts e = do
+  let
+    checkConflict cvd = do
+      cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ (+1))
+      cvd ^. cvdNewUniques === (cvd ^. cvdExistingUniques & _Wrapped %~ (+2))
+  cvds <- e ^? _ConflictingVCData & maybe (error "Expecting conflicting VC data") pure
+  traverse_ checkConflict cvds
 
 vcToTrafficCount ::
   VC a
@@ -383,8 +427,8 @@ popRoundTrip ::
   -> Connection
   -> PropertyT IO ()
 popRoundTrip _ conn =  do
-  drs <- forAllT genDbRepoStats
-  popBadRepoId <- forAllT genPop
+  drs <- forAll genDbRepoStats
+  popBadRepoId <- forAll genPop
   resetDb conn
   (_, drsId) <- (evalEither =<<) $ insertRunAndStats conn drs
   let pop = popBadRepoId {popRepoId = drsId}

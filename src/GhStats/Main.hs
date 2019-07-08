@@ -10,11 +10,10 @@ import           Control.Monad.IO.Class   (liftIO)
 import           Control.Monad.Reader     (ReaderT, runReaderT)
 import qualified Data.ByteString.Lazy     as LBS
 import           Data.Foldable            (toList, traverse_)
-import           Data.Functor.Compose     (Compose (Compose, getCompose))
-import           Data.List.NonEmpty       (NonEmpty)
 import           Data.Sv                  (defaultEncodeOptions, encodeNamed)
 import           Data.Validation
-    (Validation, validation)
+    (Validation (Failure), validation)
+import Data.Vector (Vector)
 import           Data.Word                (Word16)
 import           Database.SQLite.Simple   (Connection, open)
 import qualified GitHub                   as GH
@@ -26,11 +25,10 @@ import           Servant.Server.Generic   (genericServeT)
 import           Text.Read                (readEither)
 
 import GhStats          (getHighLevelOrgStats, getReposForOrg, toRepoStats)
-import GhStats.Db       (initDb, insertRepoStatsRun, insertRepoStatsTree)
-import GhStats.Db.Types (DbRepoStats, Id, RepoStatsRun)
+import GhStats.Db       (initDb, insertRepoStatsRun, insertRepoStatsesValidation)
 import GhStats.Types
-    (Error, Token, ghStatsMToValidationIO, highLevelRepoStatsEnc,
-    runGhStatsMToHandler)
+    (Error, RepoStats, Token, ghStatsMToValidationIO, highLevelRepoStatsEnc,
+    runGhStatsMToHandler, ValResult)
 import GhStats.Web      (ghStatsServer)
 
 go ::
@@ -84,24 +82,9 @@ updateDb' conn orgName token =
       runM initDb
       repos <- runM $ getReposForOrg orgName
       rsrId <- runM insertRepoStatsRun
-      res <- insertReposValidation conn token rsrId repos
-      validation printErrors (const $ pure ()) res
-
-insertReposValidation ::
-  forall t.
-  ( Traversable t
-  )
-  => Connection
-  -> Token
-  -> Id RepoStatsRun
-  -> t GH.Repo
-  -> IO (Validation (NonEmpty Error) (t (Id DbRepoStats)))
-insertReposValidation conn token rsrId =
-  let
-    ins =
-      ghStatsMToValidationIO conn . (insertRepoStatsTree rsrId <=< toRepoStats token)
-  in
-    getCompose . traverse (Compose . ins)
+      repoStats <- traverse (ghStatsMToValidationIO conn . toRepoStats token) repos
+      res <- insertRepoStatsesValidation conn rsrId (repoStats :: Vector (ValResult Error RepoStats))
+      traverse_ (validation printErrors (const $ pure ())) res
 
 serveyMcServeFace ::
   FilePath

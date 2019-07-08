@@ -18,7 +18,7 @@ module GhStats.Db
   , insertRepoStats
   , insertRepoStatsRun
   , insertRepoStatsTree
-  , insertRepoStatsTreeValidation
+  , insertRepoStatsesValidation
   , insertVC
   , insertViews
 
@@ -62,7 +62,8 @@ import qualified Data.Map.Strict              as M
 import           Data.Proxy                   (Proxy (Proxy))
 import qualified Data.Text                    as T
 import           Data.Time.Clock              (UTCTime)
-import           Data.Validation              (Validation (Failure), toEither)
+import           Data.Validation
+    (Validation (Failure), toEither, validation)
 import           Database.SQLite.Simple
     (Connection, FromRow, Only (Only), Query (Query), ToRow, execute,
     executeMany, execute_, lastInsertRowId, query, query_)
@@ -73,9 +74,9 @@ import GhStats.Db.Types
 import GhStats.Types
     (AsError (_ConflictingVCData, _TooManyResults),
     AsSQLiteResponse (_SQLiteResponse), CVD (CVD), Count (Count),
-    HasConnection (connection), RepoStats (..), Uniques (Uniques),
-    repoStatsClones, repoStatsName, repoStatsPopularPaths,
-    repoStatsPopularReferrers, repoStatsViews, ghStatsMToValidationM)
+    HasConnection (connection), RepoStats (..), Uniques (Uniques), ValResult,
+    ghStatsMToValidationIO, repoStatsClones, repoStatsName,
+    repoStatsPopularPaths, repoStatsPopularReferrers, repoStatsViews)
 
 type DbConstraints e r m =
   ( MonadReader r m
@@ -171,6 +172,22 @@ initDb =
       , qClonesRepoNameCheck
       ]
 
+
+insertRepoStatsesValidation ::
+  forall t e.
+  ( Traversable t
+  , AsError e
+  )
+  => Connection
+  -> Id RepoStatsRun
+  -> t (ValResult e RepoStats)
+  -> IO (t (ValResult e (Id DbRepoStats)))
+insertRepoStatsesValidation conn rsrId =
+  let
+    ins = ghStatsMToValidationIO conn . insertRepoStatsTree rsrId
+  in
+    traverse $ validation (pure . Failure) ins
+
 insertRepoStatsTree ::
   ( DbConstraints e r m
   , AsError e
@@ -187,18 +204,6 @@ insertRepoStatsTree rsrId rs = do
   insertViews rsId repoName (rs ^. repoStatsViews)
   insertClones rsId repoName (rs ^. repoStatsClones)
   pure rsId
-
-insertRepoStatsTreeValidation ::
-  ( MonadReader r m
-  , HasConnection r
-  , AsError e
-  , MonadIO m
-  )
-  => Id RepoStatsRun
-  -> RepoStats
-  -> m (Validation (NonEmpty e) (Id DbRepoStats))
-insertRepoStatsTreeValidation rsrId rs =
-  ghStatsMToValidationM $ insertRepoStatsTree rsrId rs
 
 insertRepoStatsRun ::
   DbConstraints e r m
