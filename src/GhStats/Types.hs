@@ -25,6 +25,7 @@ import           Control.Monad.Reader
 import           Data.Bifunctor                     (first)
 import           Data.ByteString                    (ByteString)
 import qualified Data.ByteString.Lazy.Char8         as BSL8
+import           Data.Foldable                      (toList)
 import           Data.List.NonEmpty                 (NonEmpty)
 import           Data.String                        (IsString)
 import           Data.Sv                            (NameEncode, (=:))
@@ -83,7 +84,7 @@ data Error =
   SQLiteError SQLiteResponse
   | GithubError GH.Error
   | TooManyResults Text
-  | ConflictingVCData [CVD]
+  | ConflictingVCData (NonEmpty CVD)
   deriving (Show)
 
 toServantError ::
@@ -96,7 +97,7 @@ toServantError e =
       SQLiteError sqle    -> BSL8.pack $ show sqle
       GithubError ghe     -> BSL8.pack $ show ghe
       TooManyResults tmr  -> BSL8.fromStrict . encodeUtf8 $ tmr
-      ConflictingVCData cvd -> BSL8.intercalate "\n" . fmap (BSL8.pack . show) $ cvd
+      ConflictingVCData cvd -> BSL8.intercalate "\n" . toList . fmap (BSL8.pack . show) $ cvd
   in
     err500 {errBody = msg}
 

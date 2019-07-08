@@ -323,14 +323,14 @@ selectVCsForRepoId drsId =
       query conn q (Only drsId)
 
 checkOverlap ::
-  M.WhenMatched (Validation [CVD])
+  M.WhenMatched (Validation (NonEmpty CVD))
                 (GH.Name GH.Repo, UTCTime)
                 (Count a, Uniques a)
                 (Count a, Uniques a)
                 (Count a, Uniques a)
 checkOverlap =
   M.zipWithMaybeAMatched $ \(n,t) (c1,u1) (c2,u2) ->
-    bool (Failure [CVD n t c1 u1 c2 u2])
+    bool (Failure $ NE.fromList [CVD n t c1 u1 c2 u2])
          (pure Nothing)
          (c1 == c2 && u1 == u2)
 
