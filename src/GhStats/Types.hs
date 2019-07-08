@@ -138,6 +138,8 @@ cvdExistingUniques =
 makeClassyPrisms ''Error
 makeClassyPrisms ''SQLiteResponse
 
+type ValResult e a = Validation (NonEmpty e) a
+
 ghStatsMToValidationM ::
   ( Monad m
   , MonadReader r m
@@ -146,7 +148,7 @@ ghStatsMToValidationM ::
   , MonadIO m
   )
   => GhStatsM a
-  -> m (Validation (NonEmpty e) a)
+  -> m (ValResult e a)
 ghStatsMToValidationM (GhStatsM m) = do
   conn <- asks (^. connection)
   liftIO . fmap (validationNel . first (_Error #)) . runExceptT . flip runReaderT conn $ m
@@ -156,7 +158,7 @@ ghStatsMToValidationIO ::
   )
   => Connection
   -> GhStatsM a
-  -> IO (Validation (NonEmpty e) a)
+  -> IO (ValResult e a)
 ghStatsMToValidationIO conn ghStatsM =
   runReaderT (ghStatsMToValidationM ghStatsM) conn
 
