@@ -1,5 +1,5 @@
-{ mkDerivation, base, bytestring, containers, directory, github
-, hedgehog, http-client, lens, lucid, mmorph, mtl
+{ mkDerivation, aeson, base, bytestring, containers, directory
+, github, hedgehog, http-client, lens, lucid, mmorph, mtl
 , optparse-applicative, servant, servant-lucid, servant-server
 , sqlite-simple, sqlite-simple-errors, stdenv, sv, tasty
 , tasty-hedgehog, text, time, validation, vector, warp
@@ -11,7 +11,7 @@ mkDerivation {
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
-    base bytestring containers github http-client lens lucid mtl
+    aeson base bytestring containers github http-client lens lucid mtl
     optparse-applicative servant servant-lucid servant-server
     sqlite-simple sqlite-simple-errors sv text time validation vector
     warp
