@@ -20,7 +20,7 @@ mkDerivation {
   testHaskellDepends = [
     base containers directory github hedgehog lens mmorph mtl
     sqlite-simple sqlite-simple-errors tasty tasty-hedgehog text time
-    vector
+    validation vector
   ];
   homepage = "https://qfpl.io";
   description = "Pull Github stats for an organisation and its repos";

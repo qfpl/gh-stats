@@ -24,6 +24,7 @@ common time { build-depends: time >=1.8 && <1.9 }
 common containers { build-depends: containers >=0.6 && <0.7 }
 common vector {build-depends: vector >=0.12 && <0.13 }
 common lens { build-depends: lens >= 4.17 && <4.18 }
+common validation { build-depends: validation >=1 && <1.1 }
 
 library
   import:              base
@@ -35,6 +36,7 @@ library
                      , sqlite-simple-errors
                      , text
                      , time
+                     , validation
                      , vector
 
   build-depends:
@@ -46,7 +48,6 @@ library
                      , servant-lucid >=0.9 && <0.10
                      , servant-server >=0.16 && <0.17
                      , sv == 1.3.*
-                     , validation >=1 && <1.1
                      , warp >=3.2 && <3.3
 
   exposed-modules:     GhStats
@@ -82,6 +83,7 @@ test-suite tasty
                      , sqlite-simple-errors
                      , text
                      , time
+                     , validation
                      , vector
 
   hs-source-dirs:      test
