@@ -187,3 +187,9 @@ genRepoStats =
   <*> (V.fromList <$> genPaths)
   <*> genGhViews
   <*> genGhClones
+
+genRepoStatses ::
+  MonadGen m
+  => m [RepoStats]
+genRepoStatses =
+  Gen.list (Range.linear 1 10) genRepoStats
