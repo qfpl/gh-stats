@@ -35,7 +35,8 @@ import qualified Data.Sv.Encode                     as E
 import           Data.Text                          (Text)
 import           Data.Text.Encoding                 (encodeUtf8)
 import           Data.Time.Clock                    (UTCTime)
-import           Data.Validation                    (Validation, validationNel)
+import           Data.Validation
+    (Validate (_Validation), Validation, validationNel)
 import           Data.Vector                        (Vector)
 import           Database.SQLite.Simple             (Connection, ToRow (toRow))
 import           Database.SQLite.Simple.FromField   (FromField)
@@ -77,8 +78,8 @@ newtype Clones = Clones Int
   deriving (Eq, Show, FromField, ToField)
 
 newtype ValResult e a =
-  ValResult {getValResult :: Validation (NonEmpty Error) a}
-  deriving (Show)
+  ValResult {getValResult :: Validation (NonEmpty e) a}
+  deriving (Show, Functor, Applicative)
 
 class HasConnection s where
   connection :: Lens' s Connection
@@ -293,3 +294,4 @@ newtype Token = Token { getToken :: ByteString }
 
 makeWrapped ''Count
 makeWrapped ''Uniques
+makeWrapped ''ValResult

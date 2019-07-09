@@ -13,7 +13,7 @@ module GhStats.DbTest where
 
 import           Control.Exception                  (throw)
 import           Control.Lens
-    (Getter, Lens', mapped, to, (%~), (&), (+~), (.~), (?~), (^.), (^?), (<&>),
+    (Getter, Lens', mapped, to, (%~), (&), (+~), (.~), (?~), (^.), (^?), (<&>), _2,
     _Wrapped, (#), Traversal', (^..))
 import           Control.Lens.Extras                (is)
 import           Control.Monad
@@ -65,7 +65,7 @@ import GhStats.Db.Types
     VC (VC, _vcCount, _vcId, _vcRepoId, _vcRepoName, _vcTimestamp, _vcUniques),
     dbRepoStatsId, dbRepoStatsName, dbRepoStatsRunId)
 import GhStats.Types
-    (ValResult, AsSQLiteResponse, CVD, Count (Count), Error (SQLiteError), Forks (..),
+    (ValResult (getValResult), AsSQLiteResponse, CVD, Count (Count), Error (SQLiteError), Forks (..),
     GhStatsM (GhStatsM), HasConnection, RepoStats, Stars (..),
     Uniques (Uniques), cvdExistingCount, cvdExistingUniques, cvdNewCount,
     cvdNewUniques, repoStatsName, repoStatsViews, runGhStatsM,
@@ -348,14 +348,14 @@ testInsertTreeValidation ::
   Connection
   -> PropertyT IO ()
 testInsertTreeValidation conn = do
-  rss <- (fmap . fmap) (_Success #) $ forAll genRepoStatses
+  rss <- (fmap . fmap) (_Wrapped._Success #) $ forAll genRepoStatses
   resetDb conn
 
   let
     ghViews ::
       Traversal' [ValResult Error RepoStats] (Vector (GH.TrafficCount GH.View))
     ghViews =
-      traverse._Success.repoStatsViews.views
+      traverse._Wrapped._Success.repoStatsViews.views
 
     conflicting =
       makeConflicting ghViews rss
@@ -363,11 +363,14 @@ testInsertTreeValidation conn = do
     expectedErrorCount =
       rss ^.. ghViews & length
 
+    checkValResult =
+      validation (traverse_ checkConflicts) (const $ error "Expecting failure") . getValResult
+
   rsrId <- evalEither <=< hoozit conn $ insertRepoStatsRun
   liftIO $ insertRepoStatsesValidation conn rsrId rss
   vcs <- liftIO . fmap sequenceA $ insertRepoStatsesValidation conn rsrId conflicting
-  evalM $ validation (traverse_ checkConflicts) (const $ error "Expecting failure") vcs
-  (vcs ^? _Failure <&> length) === Just expectedErrorCount
+  evalM . checkValResult $ vcs
+  ((vcs :: ValResult Error [Id DbRepoStats]) ^? (_Wrapped._Failure) <&> length) === Just expectedErrorCount
 
 makeConflicting ::
   Traversal' a (Vector (GH.TrafficCount b))
@@ -384,7 +387,7 @@ checkConflicts e = do
     checkConflict cvd = do
       cvd ^. cvdNewCount === (cvd ^. cvdExistingCount & _Wrapped %~ (+1))
       cvd ^. cvdNewUniques === (cvd ^. cvdExistingUniques & _Wrapped %~ (+2))
-  cvds <- e ^? _ConflictingVCData & maybe (error "Expecting conflicting VC data") pure
+  cvds <- e ^? _ConflictingVCData._2 & maybe (error "Expecting conflicting VC data") pure
   traverse_ checkConflict cvds
 
 vcToTrafficCount ::
