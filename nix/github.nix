@@ -3,5 +3,5 @@ builtins.fetchGit {
   url = https://github.com/qfpl/github/;
   # `git ls-remote https://github.com/qfpl/github traffic-nix`
   ref = "traffic-nix";
-  rev = "3a631793289aa50091e19330d229fb4f040457fe";
+  rev = "a2e43623c4c1b832aa56f0c44f0fa04906724ccd";
 }
