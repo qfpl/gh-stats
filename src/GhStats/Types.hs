@@ -22,6 +22,8 @@ import           Control.Monad.Except
 import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Monad.Reader
     (MonadReader, ReaderT, asks, runReaderT)
+import           Data.Aeson
+    (ToJSON (toJSON), object, (.=))
 import           Data.Bifunctor                     (first)
 import           Data.ByteString                    (ByteString)
 import qualified Data.ByteString.Lazy.Char8         as BSL8
@@ -88,7 +90,7 @@ data Error =
   SQLiteError SQLiteResponse
   | GithubError GH.Error
   | TooManyResults Text
-  | ConflictingVCData (NonEmpty CVD)
+  | ConflictingVCData Text (NonEmpty CVD)
   deriving (Show)
 
 toServantError ::
@@ -97,11 +99,16 @@ toServantError ::
 toServantError e =
   let
     -- dbMsg = "A database error occurred."
+    textToBSL = BSL8.fromStrict . encodeUtf8
     msg = case e of
       SQLiteError sqle    -> BSL8.pack $ show sqle
       GithubError ghe     -> BSL8.pack $ show ghe
-      TooManyResults tmr  -> BSL8.fromStrict . encodeUtf8 $ tmr
-      ConflictingVCData cvd -> BSL8.intercalate "\n" . toList . fmap (BSL8.pack . show) $ cvd
+      TooManyResults tmr  -> textToBSL tmr
+      ConflictingVCData table cvd ->
+        let
+          conflicts = BSL8.intercalate "\n  " . toList . fmap (BSL8.pack . show) $ cvd
+        in
+          "Conflicting data in " <> textToBSL table <> ":\n  " <> conflicts
   in
     err500 {errBody = msg}
 
@@ -154,7 +161,10 @@ ghStatsMToValidationM ::
   -> m (ValResult e a)
 ghStatsMToValidationM (GhStatsM m) = do
   conn <- asks (^. connection)
-  liftIO . fmap (validationNel . first (_Error #)) . runExceptT . flip runReaderT conn $ m
+  let
+    runM = runExceptT . flip runReaderT conn
+    toValidation = ValResult . validationNel . first (_Error #)
+  liftIO . fmap toValidation . runM $ m
 
 ghStatsMToValidationIO ::
   ( AsError e
@@ -210,12 +220,12 @@ instance AsSQLiteResponse Error where
   _SQLiteResponse = _SQLiteError
 
 newtype Stars = Stars Int
-  deriving (Eq, Show, FromField, ToField)
+  deriving (Eq, Show, FromField, ToField, ToJSON)
 
 makeWrapped ''Stars
 
 newtype Forks = Forks Int
-  deriving (Eq, Show, FromField, ToField)
+  deriving (Eq, Show, FromField, ToField, ToJSON)
 
 makeWrapped ''Forks
 
@@ -233,6 +243,18 @@ data RepoStats =
   deriving Show
 
 makeLenses ''RepoStats
+
+instance ToJSON RepoStats where
+  toJSON (RepoStats n t s f r p v c) = object
+    [ "name" .= n
+    , "timestamp" .= t
+    , "stars" .= s
+    , "forks" .= f
+    , "referrers" .= r
+    , "paths" .= p
+    , "views" .= v
+    , "clones" .= c
+    ]
 
 instance ToRow RepoStats where
   toRow rs = toRow (

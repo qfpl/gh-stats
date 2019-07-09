@@ -5,6 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module GhStats.Db
@@ -288,7 +289,7 @@ insertVCs' p rsId repoName tcvs = do
     new = M.fromList . NE.toList $ toViewMapElem <$> tcvs
     alwaysSkip = M.filterAMissing $ \_ _ -> pure False
     alwaysInsert = M.filterAMissing $ \_ _ -> pure True
-    liftToInsertMap = either (throwing _ConflictingVCData) pure . toEither
+    liftToInsertMap = either (throwing _ConflictingVCData.(tableName @a,)) pure . toEither
     toInsertList = fmap (\((n,t),(c,u)) -> VC Nothing t c u rsId n) . M.toList
   existing <- selectVCsBetweenDates @a dateRange repoName
   insertMap <- liftToInsertMap $ M.mergeA alwaysSkip alwaysInsert checkOverlap existing new

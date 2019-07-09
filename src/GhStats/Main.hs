@@ -8,12 +8,12 @@ import           Control.Monad            ((<=<))
 import           Control.Monad.Except     (ExceptT, runExceptT)
 import           Control.Monad.IO.Class   (liftIO)
 import           Control.Monad.Reader     (ReaderT, runReaderT)
+import           Data.Aeson               (encodeFile)
 import qualified Data.ByteString.Lazy     as LBS
 import           Data.Foldable            (toList, traverse_)
 import           Data.Sv                  (defaultEncodeOptions, encodeNamed)
-import           Data.Validation
-    (Validation (Failure), validation)
-import Data.Vector (Vector)
+import           Data.Validation          (Validation (Failure), validation)
+import           Data.Vector              (Vector)
 import           Data.Word                (Word16)
 import           Database.SQLite.Simple   (Connection, open)
 import qualified GitHub                   as GH
@@ -22,10 +22,13 @@ import           Options.Applicative
     (Parser, command, eitherReader, execParser, fullDesc, header, help, helper,
     info, long, metavar, option, progDesc, short, strOption, subparser, (<**>))
 import           Servant.Server.Generic   (genericServeT)
+import           System.IO                (IOMode (WriteMode), withFile)
 import           Text.Read                (readEither)
 
 import GhStats          (getHighLevelOrgStats, getReposForOrg, toRepoStats)
-import GhStats.Db       (initDb, insertRepoStatsRun, insertRepoStatsesValidation)
+import GhStats.Db
+    (initDb, insertRepoStatsRun, insertRepoStatsesValidation)
+import GhStats.Db.Types (Id, RepoStatsRun)
 import GhStats.Types
     (Error, RepoStats, Token, ValResult (getValResult), ghStatsMToValidationIO,
     highLevelRepoStatsEnc, runGhStatsMToHandler)
@@ -36,7 +39,7 @@ go ::
   -> IO ()
 go = \case
   Csv orgName token -> csv orgName token
-  UpdateDb orgName dbFile token -> updateDb orgName dbFile token
+  UpdateDb orgName dbFile auditFile token -> updateDb orgName dbFile auditFile token
   Serve dbFile port -> serveyMcServeFace dbFile port
 
 csv ::
@@ -58,18 +61,20 @@ csv orgName token =
 updateDb ::
   GH.Name GH.Organization
   -> FilePath
+  -> FilePath
   -> Token
   -> IO ()
-updateDb orgName dbFile token = do
+updateDb orgName dbFile auditFile token = do
   conn <- open dbFile
-  updateDb' conn orgName token
+  updateDb' conn orgName auditFile token
 
 updateDb' ::
   Connection
   -> GH.Name GH.Organization
+  -> FilePath
   -> Token
   -> IO ()
-updateDb' conn orgName token =
+updateDb' conn orgName auditFile token =
   let
     runM :: ReaderT Connection (ExceptT Error IO) a -> IO a
     runM = either throw pure <=< runExceptT . flip runReaderT conn
@@ -85,6 +90,15 @@ updateDb' conn orgName token =
       repoStats <- traverse (ghStatsMToValidationIO conn . toRepoStats token) repos
       res <- insertRepoStatsesValidation conn rsrId (repoStats :: Vector (ValResult Error RepoStats))
       traverse_ (validation printErrors (const $ pure ()) . getValResult) res
+
+logRun ::
+  Id RepoStatsRun
+  -> FilePath
+  -> Vector (ValResult Error RepoStats)
+  -> IO ()
+logRun rsrId auditFileDir rss =
+  withFile auditFileDir WriteMode $ \h -> do
+    undefined
 
 serveyMcServeFace ::
   FilePath
@@ -110,9 +124,12 @@ newtype Port = Port Word16
   deriving (Eq, Show)
 
 data Command =
-  Csv (GH.Name GH.Organization) Token                 -- ^ Output the per-repository summary as a CSV to stdout
-  | UpdateDb (GH.Name GH.Organization) FilePath Token -- ^ Insert the latest summary into the SQLite DB
-  | Serve FilePath Port                               -- ^ Serve the latest summary as a web page
+  Csv (GH.Name GH.Organization) Token
+  -- ^ Output the per-repository summary as a CSV to stdout
+  | UpdateDb (GH.Name GH.Organization) FilePath FilePath Token
+  -- ^ Insert the latest summary into the SQLite DB
+  | Serve FilePath Port
+  -- ^ Serve the latest summary as a web page
   deriving (Eq, Show)
 
 dbParser ::
@@ -152,6 +169,16 @@ portParser =
       portReader = eitherReader (fmap Port . readEither)
    in option portReader mods
 
+auditParser ::
+  Parser FilePath
+auditParser =
+  strOption
+    ( long "audit-dir"
+   <> short 'a'
+   <> metavar "AUDIT_PATH"
+   <> help "Path to the audit log of the GitHub data retrieved."
+    )
+
 cmdParser ::
   Parser Command
 cmdParser =
@@ -162,7 +189,7 @@ cmdParser =
       "Output the latest summary as a CSV to stdout."
 
     updateParser =
-      UpdateDb <$> orgParser <*> dbParser <*> tokenParser
+      UpdateDb <$> orgParser <*> dbParser <*> auditParser <*> tokenParser
     updateDesc =
       "Insert the latest summary into the SQLite DB, creating the DB if necessary."
 
