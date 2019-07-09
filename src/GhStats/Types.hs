@@ -74,6 +74,10 @@ newtype Views = Views Int
 newtype Clones = Clones Int
   deriving (Eq, Show, FromField, ToField)
 
+newtype ValResult e a =
+  ValResult {getValResult :: Validation (NonEmpty Error) a}
+  deriving (Show)
+
 class HasConnection s where
   connection :: Lens' s Connection
 
@@ -138,8 +142,6 @@ cvdExistingUniques =
 
 makeClassyPrisms ''Error
 makeClassyPrisms ''SQLiteResponse
-
-type ValResult e a = Validation (NonEmpty e) a
 
 ghStatsMToValidationM ::
   ( Monad m

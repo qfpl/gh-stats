@@ -74,7 +74,7 @@ import GhStats.Db.Types
 import GhStats.Types
     (AsError (_ConflictingVCData, _TooManyResults),
     AsSQLiteResponse (_SQLiteResponse), CVD (CVD), Count (Count),
-    HasConnection (connection), RepoStats (..), Uniques (Uniques), ValResult,
+    HasConnection (connection), RepoStats (..), Uniques (Uniques), ValResult (ValResult, getValResult),
     ghStatsMToValidationIO, repoStatsClones, repoStatsName,
     repoStatsPopularPaths, repoStatsPopularReferrers, repoStatsViews)
 
@@ -186,7 +186,7 @@ insertRepoStatsesValidation conn rsrId =
   let
     ins = ghStatsMToValidationIO conn . insertRepoStatsTree rsrId
   in
-    traverse $ validation (pure . Failure) ins
+    traverse $ validation (pure . ValResult . Failure) ins . getValResult
 
 insertRepoStatsTree ::
   ( DbConstraints e r m

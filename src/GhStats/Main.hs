@@ -27,8 +27,8 @@ import           Text.Read                (readEither)
 import GhStats          (getHighLevelOrgStats, getReposForOrg, toRepoStats)
 import GhStats.Db       (initDb, insertRepoStatsRun, insertRepoStatsesValidation)
 import GhStats.Types
-    (Error, RepoStats, Token, ghStatsMToValidationIO, highLevelRepoStatsEnc,
-    runGhStatsMToHandler, ValResult)
+    (Error, RepoStats, Token, ValResult (getValResult), ghStatsMToValidationIO,
+    highLevelRepoStatsEnc, runGhStatsMToHandler)
 import GhStats.Web      (ghStatsServer)
 
 go ::
@@ -84,7 +84,7 @@ updateDb' conn orgName token =
       rsrId <- runM insertRepoStatsRun
       repoStats <- traverse (ghStatsMToValidationIO conn . toRepoStats token) repos
       res <- insertRepoStatsesValidation conn rsrId (repoStats :: Vector (ValResult Error RepoStats))
-      traverse_ (validation printErrors (const $ pure ())) res
+      traverse_ (validation printErrors (const $ pure ()) . getValResult) res
 
 serveyMcServeFace ::
   FilePath
